@@ -170,7 +170,7 @@ namespace VividFrame
             // Menus aim the mouse using the camera's normal FOV, so a wider FOV can make their
             // buttons miss the cursor. Reset for VividFrame's menu directly and use free cursor
             // state as a fallback for VRChat's menus.
-            bool uiOpen = _settings.FovResetInMenus.Value && (_menuVisible || IsCursorFree());
+            bool uiOpen = VrSupport.Active || (_settings.FovResetInMenus.Value && (_menuVisible || IsCursorFree()));
             bool zoomKey = ZoomHeld() && !uiOpen;
             bool want = (_settings.FovOverride.Value || zoomKey) && !uiOpen;
             float dt = Mathf.Max(0.0001f, Mathf.Min(Time.unscaledDeltaTime, 0.1f));

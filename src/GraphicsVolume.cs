@@ -27,6 +27,7 @@ namespace VividFrame
         private PostProcessProfile _profile;
         private float _lastLoggedMissingLayers;
         private bool _warnedMissingLayer;
+        private int _lastLoggedStereoLayers = -1;
         private bool _didResizeBuffers;
         private float _lastAppliedScale = 1f;
 
@@ -367,6 +368,7 @@ namespace VividFrame
                 FindObjectsSortMode.None);
 
             int found = 0;
+            int stereoFound = 0;
             int volumeBit = 1 << (_go != null ? _go.layer : 0);
 
             if (layers != null)
@@ -378,10 +380,22 @@ namespace VividFrame
                         continue;
 
                     found++;
+                    Camera camera = layer.GetComponent<Camera>();
+                    if (camera != null && camera.stereoEnabled)
+                        stereoFound++;
                     int mask = layer.volumeLayer;
                     if ((mask & volumeBit) == 0)
                         layer.volumeLayer = mask | volumeBit;
                 }
+            }
+
+            if (VrSupport.Active && stereoFound != _lastLoggedStereoLayers)
+            {
+                _lastLoggedStereoLayers = stereoFound;
+                if (stereoFound > 0)
+                    _log.Msg("Bound VividFrame's shared post-processing profile to {0} stereo camera layer(s); both eyes use the same settings.", stereoFound);
+                else
+                    _log.Warning("VR is active but no stereo PostProcessLayer was found; VividFrame visual effects may be unavailable in the headset.");
             }
 
             if (found == 0)

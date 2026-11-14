@@ -36,6 +36,10 @@ Made by **mcperr**. MIT licensed and fully open source.
 2. Download `VividFrame.dll` from the [latest release](https://github.com/bliper2/vividframe/releases/latest).
 3. Put it in `VRChat\Mods` and start the game. Press **Home**.
 
+### VR controls
+
+When VRChat is rendering in stereo, VividFrame uses a world-space panel rendered in both eyes. Press both controllers' secondary buttons together (usually **B + Y**) to open or close it. Point the **right controller** at a setting and pull its trigger; use the right thumbstick up or down to scroll. The shared post-processing profile is applied through VRChat's stereo camera layers, so both eyes receive the same settings. FOV override and zoom do not change headset lens projection.
+
 ## Auto update
 
 On startup (and every six hours) VividFrame asks GitHub for the latest release. If it is newer and **Auto update** is on (Settings tab), it downloads the DLL, verifies it, and installs it when the game closes.

@@ -2,7 +2,7 @@ using System;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(VividFrame.VividFrameMod), "VividFrame", "1.8.1", "VividFrame")]
+[assembly: MelonInfo(typeof(VividFrame.VividFrameMod), "VividFrame", "1.8.2", "VividFrame")]
 [assembly: MelonGame("VRChat", "VRChat")]
 
 namespace VividFrame
@@ -30,6 +30,7 @@ namespace VividFrame
         private readonly HotKey _profileKey = new HotKey();
         private int _profileCycle = -1;
         private MiscTweaks _misc;
+        private VrWorldMenu _vrMenu;
         private readonly HotKey _shotKey = new HotKey();
         private bool _shotWaitClosed;
         private int _shotFrames = -1;
@@ -82,6 +83,8 @@ namespace VividFrame
             _profiles = new ProfileStore(LoggerInstance);
             _worlds = new WorldProfiles(LoggerInstance);
             _misc = new MiscTweaks(_settings, LoggerInstance);
+            _vrMenu = new VrWorldMenu(_settings, _misc, OnSettingsChanged,
+                () => { if (_menu != null) _menu.ScreenshotRequested = true; }, LoggerInstance);
             _volume = new GraphicsVolume(_settings, LoggerInstance, _autoFocus);
             _menu = new Menu(_settings, OnSettingsChanged, LoggerInstance, _autoFocus, _profiles, _worlds, _misc);
             LoggerInstance.Msg("VividFrame {0} ready. Press {1} for the centred glass menu. Profiles: {2}", VividFrameInfo.Version, _settings.MenuKey.Value, _profiles.DirectoryPath);
@@ -139,6 +142,7 @@ namespace VividFrame
             if (_shotFrames >= 0)
             {
                 _menu.HideOverlays = true;
+                _vrMenu?.HideHud(true);
                 if (_shotFrames == 0)
                 {
                     _shotName = _misc != null ? _misc.TakeScreenshot() : null;
@@ -157,6 +161,7 @@ namespace VividFrame
                 if (_shotNotifyFrames == 0)
                 {
                     _menu.HideOverlays = false;
+                    _vrMenu?.HideHud(false);
                     _menu.Notify(_shotName != null ? "Screenshot saved" : "Screenshot failed");
                 }
             }
@@ -167,10 +172,17 @@ namespace VividFrame
             if (_settings == null)
                 return;
 
+            VrSupport.Tick();
             _menu?.Tick();
             _misc?.SetMenuVisible(_menu != null && _menu.Visible);
+            _vrMenu?.Tick(_menu != null && _menu.Visible);
 
-            if (_menu == null || !_menu.IsCapturingKey)
+            if (_menu != null && !_menu.IsCapturingKey && VrSupport.MenuToggleDown)
+            {
+                VrSupport.ConsumeMenuToggleDown();
+                _menu.Toggle();
+            }
+            else if (_menu == null || !_menu.IsCapturingKey)
             {
                 if (WasMenuKeyPressed())
                     _menu.Toggle();
@@ -229,6 +241,8 @@ namespace VividFrame
 
         public override void OnGUI()
         {
+            if (VrSupport.Active)
+                return;
             if (_menu == null || !(_menu.Visible || _menu.HudActive || _menu.OverlaysActive))
                 return;
 
@@ -334,6 +348,7 @@ namespace VividFrame
         public override void OnDeinitializeMelon()
         {
             _misc?.Restore();
+            _vrMenu?.Dispose();
             _menu?.SetOpen(false);
             _menu?.Dispose();
             _volume?.Teardown();

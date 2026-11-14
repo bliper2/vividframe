@@ -12,7 +12,7 @@
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <AssemblyName>VividFrame</AssemblyName>
     <RootNamespace>VividFrame</RootNamespace>
-    <Version>1.8.1</Version>
+    <Version>1.8.2</Version>
     <Authors>mcperr</Authors>
     <Description>A graphics and quality-of-life mod for VRChat (MelonLoader).</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -65,6 +65,14 @@
     </Reference>
     <Reference Include="UnityEngine.InputLegacyModule">
       <HintPath>$(Il2CppAssemblies)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.XRModule">
+      <HintPath>$(Il2CppAssemblies)\UnityEngine.XRModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.VRModule">
+      <HintPath>$(Il2CppAssemblies)\UnityEngine.VRModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.TextRenderingModule">

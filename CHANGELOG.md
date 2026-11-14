@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.2
+- Added a headset-visible world-space settings panel with right-controller pointing, trigger clicks, thumbstick scrolling, and a B+Y menu toggle.
+- Mirrored settings, HUD overlays, and post-processing through the stereo camera so they render to both eyes.
+- Added an in-VR screenshot action and stereo post-processing diagnostics.
+- FOV override and zoom now stay off in VR, where the headset owns lens projection.
+
 ## 1.8.1
 - Keep replaced frosted-blur textures alive for 90 frames before destroying them, matching the menu's other cached textures.
 - Reset the FOV while VividFrame's own menu is visible, even if cursor lock state does not change.
