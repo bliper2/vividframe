@@ -49,6 +49,7 @@ namespace VividFrame
         private float _origNear, _origFar;
         private float _nextCameraLookup;
         private float _nextPass;
+        private bool _menuVisible;
         private string _zoomName;
         private KeyCode _zoomCode;
         private bool _zoomValid;
@@ -66,6 +67,11 @@ namespace VividFrame
         }
 
         public string ScreenshotFolder { get { return _shotDir; } }
+
+        public void SetMenuVisible(bool visible)
+        {
+            _menuVisible = visible;
+        }
 
         // ------------------------------------------------------------------ ticking
 
@@ -161,10 +167,10 @@ namespace VividFrame
 
         private void TickFov()
         {
-            // Menus (VRChat's and ours) aim the mouse using the camera's normal FOV, so a wider
-            // FOV makes their buttons miss the cursor. While the cursor is free we ease back to
-            // the original FOV and ease out again when mouse-look returns.
-            bool uiOpen = _settings.FovResetInMenus.Value && IsCursorFree();
+            // Menus aim the mouse using the camera's normal FOV, so a wider FOV can make their
+            // buttons miss the cursor. Reset for VividFrame's menu directly and use free cursor
+            // state as a fallback for VRChat's menus.
+            bool uiOpen = _settings.FovResetInMenus.Value && (_menuVisible || IsCursorFree());
             bool zoomKey = ZoomHeld() && !uiOpen;
             bool want = (_settings.FovOverride.Value || zoomKey) && !uiOpen;
             float dt = Mathf.Max(0.0001f, Mathf.Min(Time.unscaledDeltaTime, 0.1f));

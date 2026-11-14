@@ -2,7 +2,7 @@ using System;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(VividFrame.VividFrameMod), "VividFrame", "1.8.0", "VividFrame")]
+[assembly: MelonInfo(typeof(VividFrame.VividFrameMod), "VividFrame", "1.8.1", "VividFrame")]
 [assembly: MelonGame("VRChat", "VRChat")]
 
 namespace VividFrame
@@ -168,6 +168,7 @@ namespace VividFrame
                 return;
 
             _menu?.Tick();
+            _misc?.SetMenuVisible(_menu != null && _menu.Visible);
 
             if (_menu == null || !_menu.IsCapturingKey)
             {

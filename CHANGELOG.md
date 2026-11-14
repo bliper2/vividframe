@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.8.1
+- Keep replaced frosted-blur textures alive for 90 frames before destroying them, matching the menu's other cached textures.
+- Reset the FOV while VividFrame's own menu is visible, even if cursor lock state does not change.
+
 ## 1.8.0
 - Added a "Players in instance" overlay (Misc, Overlays).
 - Added auto update from GitHub releases (checksum verified, installs when the game closes). Settings, Updates.

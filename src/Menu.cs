@@ -159,6 +159,7 @@ namespace VividFrame
 
         // Frosted blur snapshot.
         private Texture2D _blurTex;
+        private readonly List<KeyValuePair<Texture2D, int>> _retiredBlurTextures = new List<KeyValuePair<Texture2D, int>>(2);
         private bool _captureWait;
         private float _captureDeadline;
         private bool _blurBroken;
@@ -435,6 +436,13 @@ namespace VividFrame
             if (_blurTex != null)
                 UnityEngine.Object.Destroy(_blurTex);
             _blurTex = null;
+            for (int i = 0; i < _retiredBlurTextures.Count; i++)
+            {
+                Texture2D retired = _retiredBlurTextures[i].Key;
+                if (retired != null)
+                    UnityEngine.Object.Destroy(retired);
+            }
+            _retiredBlurTextures.Clear();
             _theme.Dispose();
         }
 
@@ -451,6 +459,7 @@ namespace VividFrame
 
         public void Tick()
         {
+            SweepRetiredBlurTextures();
             SyncMotion();
             int accent = _settings.AccentIndex != null ? Mathf.Clamp(_settings.AccentIndex.Value, 0, AccentColors.Length - 1) : 0;
             _theme.Accent = AccentColors[accent];
@@ -1013,9 +1022,23 @@ namespace VividFrame
             small.wrapMode = TextureWrapMode.Clamp;
 
             if (_blurTex != null)
-                UnityEngine.Object.Destroy(_blurTex);
+                _retiredBlurTextures.Add(new KeyValuePair<Texture2D, int>(_blurTex, Time.frameCount));
             _blurTex = small;
             CrashLog.Mark("blur: ready");
+        }
+
+        private void SweepRetiredBlurTextures()
+        {
+            int frame = Time.frameCount;
+            for (int i = _retiredBlurTextures.Count - 1; i >= 0; i--)
+            {
+                if (frame - _retiredBlurTextures[i].Value < 90)
+                    continue;
+                Texture2D retired = _retiredBlurTextures[i].Key;
+                if (retired != null)
+                    UnityEngine.Object.Destroy(retired);
+                _retiredBlurTextures.RemoveAt(i);
+            }
         }
 
         private static void BoxBlur(Color32[] px, int w, int h, int radius)
