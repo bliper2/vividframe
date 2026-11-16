@@ -2156,6 +2156,10 @@ namespace VividFrame
             Switch(x0, ref y0, cw, "Keep panel in view", _settings.VrFollow);
             Hint(x0, ref y0, cw, "B + Y opens the panel. Point with the right controller, pull the trigger to click, scroll with the right stick and drag the title bar to move it.");
 
+            Section(x0, ref y0, cw, "QUICK MENU");
+            Switch(x0, ref y0, cw, "Quick Menu tab", _settings.QuickMenuEnabled);
+            Hint(x0, ref y0, cw, "Adds a VividFrame tab to VRChat's Quick Menu, in desktop and VR, with the same settings as this menu.");
+
             Section(x1, ref y1, cw, "WORLD PROFILES");
             Switch(x1, ref y1, cw, "Auto-load per world", _settings.AutoProfiles);
             if (_worlds != null && _worlds.Available)

@@ -96,6 +96,7 @@ namespace VividFrame
         public MelonPreferences_Entry<bool> AutoUpdate;
         public MelonPreferences_Entry<float> VrPanelSize;
         public MelonPreferences_Entry<bool> VrFollow;
+        public MelonPreferences_Entry<bool> QuickMenuEnabled;
 
         public MelonPreferences_Entry<bool> FpsOverlay;
         public MelonPreferences_Entry<int> FpsCorner;
@@ -216,6 +217,7 @@ namespace VividFrame
             AutoUpdate = Entry("AutoUpdate", true, "Auto update", "Download new VividFrame releases from GitHub and install them when the game closes.");
             VrPanelSize = Entry("VrPanelSize", 1f, "VR panel size", "Size of the VR panel, 0.7 to 1.4. 1 is about 62 cm wide.");
             VrFollow = Entry("VrFollow", true, "Keep VR panel in view", "Move the VR panel back in front of you when you turn or walk away from it.");
+            QuickMenuEnabled = Entry("QuickMenuEnabled", true, "Quick Menu tab", "Add a VividFrame tab with sliders, toggles and buttons to VRChat's Quick Menu.");
 
             FpsOverlay = Entry("FpsOverlay", false, "FPS counter", "Show a small FPS and frame time readout.");
             FpsCorner = Entry("FpsCorner", 1, "FPS corner", "0 top left, 1 top right, 2 bottom left, 3 bottom right.");

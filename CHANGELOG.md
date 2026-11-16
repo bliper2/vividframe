@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.10.0
+- New VividFrame tab in VRChat's Quick Menu, in desktop and VR. It opens a VividFrame page with a master toggle, a Glass menu button and buttons for eight sections: Visuals, Colour, Effects, Camera, Presets, Configs, Settings and Misc.
+- The sections use the Quick Menu's own sliders, toggles and buttons. Every slider and toggle is bound to the same setting as the glass menu and the VR panel, so a change in one shows in the others right away.
+- Options such as Tonemapper, AO mode, Focus and Bokeh size are buttons that step through their values and show the current one.
+- Presets apply with one press. Configs saves and loads Profile 1 to 3 and lists your other saved profiles.
+- The Quick Menu pages are built from stripped copies of native Quick Menu parts and are shown on top of the current page. VRChat's own page navigation is not changed, and choosing any native tab leaves the VividFrame page.
+- If the Quick Menu layout is not recognised, VividFrame logs one warning and skips the tab. The glass menu and VR panel keep working.
+- New Settings switch: Quick Menu tab (on by default).
+
 ## 1.9.0
 - The VR panel is now the desktop glass menu. The same menu is drawn into a texture on one world-space quad, so every tab, control and setting from the desktop is there in VR, with the same animations.
 - VR pointing: a laser from the right controller, the knob shows where you point, trigger clicks and drags sliders, double trigger resets a slider, the right stick scrolls smoothly, and dragging the title bar moves the panel.

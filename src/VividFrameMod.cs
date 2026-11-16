@@ -2,7 +2,7 @@ using System;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(VividFrame.VividFrameMod), "VividFrame", "1.9.0", "mcperr")]
+[assembly: MelonInfo(typeof(VividFrame.VividFrameMod), "VividFrame", "1.10.0", "mcperr")]
 [assembly: MelonGame("VRChat", "VRChat")]
 
 namespace VividFrame
@@ -31,6 +31,7 @@ namespace VividFrame
         private int _profileCycle = -1;
         private MiscTweaks _misc;
         private VrWorldMenu _vrMenu;
+        private QuickMenu.QuickMenuIntegration _quickMenu;
         private readonly HotKey _shotKey = new HotKey();
         private bool _shotWaitClosed;
         private int _shotFrames = -1;
@@ -86,6 +87,7 @@ namespace VividFrame
             _vrMenu = new VrWorldMenu(_settings, LoggerInstance);
             _volume = new GraphicsVolume(_settings, LoggerInstance, _autoFocus);
             _menu = new Menu(_settings, OnSettingsChanged, LoggerInstance, _autoFocus, _profiles, _worlds, _misc);
+            _quickMenu = new QuickMenu.QuickMenuIntegration(_settings, LoggerInstance, OnSettingsChanged, _profiles, _misc);
             LoggerInstance.Msg("VividFrame {0} ready. Press {1} for the centred glass menu. Profiles: {2}", VividFrameInfo.Version, _settings.MenuKey.Value, _profiles.DirectoryPath);
         }
 
@@ -175,6 +177,7 @@ namespace VividFrame
             _menu?.Tick();
             _misc?.SetMenuVisible(_menu != null && _menu.Visible);
             _vrMenu?.Tick(_menu);
+            _quickMenu?.Tick(_menu);
 
             if (_menu != null && VrSupport.MenuToggleDown)
             {
@@ -365,6 +368,7 @@ namespace VividFrame
         {
             _misc?.Restore();
             _vrMenu?.Dispose();
+            _quickMenu?.Dispose();
             _menu?.SetOpen(false);
             _menu?.Dispose();
             _volume?.Teardown();
