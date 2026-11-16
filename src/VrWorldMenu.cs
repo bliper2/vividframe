@@ -22,11 +22,19 @@ namespace VividFrame
         private static readonly string[] Pages = { "COLOR", "EFFECTS", "CAMERA", "HUD", "QUALITY", "SYSTEM", "ALL" };
         private static readonly string[] Keys = { "None", "Home", "Insert", "F1", "F2", "F5", "F6", "F7", "F8", "F9", "End", "Delete", "LeftAlt", "LeftControl", "RightControl", "Z", "X", "C", "V", "B", "N", "Tab" };
         private static readonly Dictionary<int, Material> Materials = new Dictionary<int, Material>();
+        private static bool _loggedShader;
         private const int RowsVisible = 9;
         private const float PanelWidth = 0.86f;
         private const float PanelHeight = 0.66f;
         private const float RowHeight = 0.044f;
         private const float RowStartY = 0.18f;
+        private const float HudHalfWidth = 0.5f;
+        private const float HudHalfHeight = 0.32f;
+
+        // TextMesh draws a glyph about characterSize * fontSize * 0.1 world units tall, so sizes that
+        // were written as characterSize * fontSize (metres) must be scaled up. With a panel row about
+        // 4 cm tall this gives roughly 2 cm text, readable in a headset at arm's length.
+        private const float TextScale = 20f;
 
         private readonly Settings _settings;
         private readonly MiscTweaks _misc;
@@ -99,7 +107,7 @@ namespace VividFrame
                 if (_camera != null)
                 {
                     _root.localPosition = new Vector3(0f, -0.03f, 1.15f);
-                    _root.localRotation = Quaternion.Euler(0f, 180f, 0f);
+                    _root.localRotation = Quaternion.identity;
                 }
 
                 if (_needsBuild)
@@ -169,9 +177,9 @@ namespace VividFrame
                 var hud = new GameObject("VividFrame VR HUD");
                 hud.hideFlags = HideFlags.HideAndDontSave;
                 hud.transform.SetParent(camera.transform, false);
-                hud.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+                hud.transform.localRotation = Quaternion.identity;
                 _hudRoot = hud.transform;
-                _hudText = CreateHudText("VividFrame VR Stats", new Vector3(-0.37f, 0.27f, 1.5f), TextAnchor.UpperLeft, 16);
+                _hudText = CreateHudText("VividFrame VR Stats", new Vector3(-HudHalfWidth, HudHalfHeight, 1.48f), TextAnchor.UpperLeft, 16);
                 _crosshairText = CreateHudText("VividFrame VR Crosshair", new Vector3(0f, 0f, 1.2f), TextAnchor.MiddleCenter, 26);
                 _crosshairText.text = "+";
                 _topBar = CreateHudBar("VividFrame VR Top Bar", new Vector3(0f, 0.31f, 1.5f));
@@ -181,7 +189,7 @@ namespace VividFrame
             _hudRoot.gameObject.SetActive(true);
             _crosshairText.gameObject.SetActive(_settings.Crosshair.Value);
             _crosshairText.text = _settings.CrosshairStyle.Value == 0 ? "•" : (_settings.CrosshairStyle.Value == 1 ? "+" : "+ ·");
-            _crosshairText.characterSize = Mathf.Clamp(_settings.CrosshairSize.Value, 2f, 24f) * 0.00016f;
+            _crosshairText.characterSize = Mathf.Clamp(_settings.CrosshairSize.Value, 2f, 24f) * 0.0013f;
             Color crossColor = Color.white;
             crossColor.a = Mathf.Clamp01(_settings.CrosshairOpacity.Value);
             _crosshairText.color = crossColor;
@@ -220,7 +228,7 @@ namespace VividFrame
             _hudText.anchor = bottom ? (right ? TextAnchor.LowerRight : TextAnchor.LowerLeft)
                                      : (right ? TextAnchor.UpperRight : TextAnchor.UpperLeft);
             _hudText.alignment = right ? TextAlignment.Right : TextAlignment.Left;
-            _hudText.transform.localPosition = new Vector3(right ? 0.37f : -0.37f, bottom ? -0.27f : 0.27f, 1.5f);
+            _hudText.transform.localPosition = new Vector3(right ? HudHalfWidth : -HudHalfWidth, bottom ? -HudHalfHeight : HudHalfHeight, 1.48f);
         }
 
         private TextMesh CreateHudText(string name, Vector3 position, TextAnchor anchor, int size)
@@ -232,7 +240,7 @@ namespace VividFrame
             go.transform.localRotation = Quaternion.identity;
             TextMesh mesh = go.AddComponent<TextMesh>();
             mesh.fontSize = size;
-            mesh.characterSize = 0.0007f;
+            mesh.characterSize = 0.0007f * TextScale;
             mesh.anchor = anchor;
             mesh.alignment = anchor == TextAnchor.MiddleCenter ? TextAlignment.Center : TextAlignment.Left;
             mesh.color = new Color(0.95f, 0.97f, 1f, 1f);
@@ -286,7 +294,9 @@ namespace VividFrame
             panel.hideFlags = HideFlags.HideAndDontSave;
             panel.transform.SetParent(current.transform, false);
             panel.transform.localPosition = new Vector3(0f, -0.03f, 1.15f);
-            panel.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            // Unity quads and TextMesh are readable from their -Z side, and the camera looks down +Z,
+            // so no rotation is needed. (A 180 degree turn hid the quads and mirrored the text.)
+            panel.transform.localRotation = Quaternion.identity;
             _root = panel.transform;
             BuildPage();
         }
@@ -506,7 +516,8 @@ namespace VividFrame
             go.name = name;
             go.hideFlags = HideFlags.HideAndDontSave;
             go.transform.SetParent(_root, false);
-            go.transform.localPosition = position;
+            // Positive z in the layout means "in front of the panel", which is toward the camera (-z).
+            go.transform.localPosition = new Vector3(position.x, position.y, -position.z);
             go.transform.localScale = new Vector3(size.x, size.y, 1f);
             Renderer renderer = go.GetComponent<Renderer>();
             renderer.sharedMaterial = GetMaterial(color);
@@ -527,13 +538,28 @@ namespace VividFrame
             int key = c.r | (c.g << 8) | (c.b << 16) | (c.a << 24);
             if (Materials.TryGetValue(key, out Material material) && material != null)
                 return material;
-            Shader shader = Shader.Find("Unlit/Color");
-            if (shader == null)
-                shader = Shader.Find("Standard");
+            // Try shaders in order of how likely the player build is to contain them. A lit shader
+            // would render dark in a world without lights, so unlit ones come first.
+            Shader shader = null;
+            string[] candidates = { "Unlit/Color", "Sprites/Default", "UI/Default", "Hidden/Internal-Colored", "Standard" };
+            for (int i = 0; i < candidates.Length && shader == null; i++)
+            {
+                Shader found = Shader.Find(candidates[i]);
+                if (found != null && found.isSupported)
+                    shader = found;
+            }
             if (shader == null)
                 return null;
+            if (!_loggedShader)
+            {
+                _loggedShader = true;
+                MelonLogger.Msg("[VividFrame] VR panel shader: {0}", shader.name);
+            }
             material = new Material(shader);
             material.color = color;
+            // Visible from either side. Depth testing stays on so the stacked layers (panel, rows,
+            // tabs, text) order themselves by their small z offsets.
+            try { material.SetInt("_Cull", 0); } catch { }
             material.hideFlags = HideFlags.HideAndDontSave;
             Materials[key] = material;
             return material;
@@ -544,7 +570,7 @@ namespace VividFrame
             GameObject go = new GameObject("VR Control");
             go.hideFlags = HideFlags.HideAndDontSave;
             go.transform.SetParent(_root, false);
-            go.transform.localPosition = position;
+            go.transform.localPosition = new Vector3(position.x, position.y, -position.z);
             go.transform.localScale = Vector3.one;
             BoxCollider collider = go.AddComponent<BoxCollider>();
             collider.size = size;
@@ -556,12 +582,12 @@ namespace VividFrame
             GameObject go = new GameObject("VR Text");
             go.hideFlags = HideFlags.HideAndDontSave;
             go.transform.SetParent(_root, false);
-            go.transform.localPosition = position;
+            go.transform.localPosition = new Vector3(position.x, position.y, -position.z);
             go.transform.localRotation = Quaternion.identity;
             TextMesh mesh = go.AddComponent<TextMesh>();
             mesh.text = text ?? string.Empty;
             mesh.fontSize = fontSize;
-            mesh.characterSize = characterSize;
+            mesh.characterSize = characterSize * TextScale;
             mesh.anchor = anchor;
             mesh.alignment = anchor == TextAnchor.MiddleCenter ? TextAlignment.Center : TextAlignment.Left;
             mesh.color = color;

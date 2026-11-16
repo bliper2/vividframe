@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.8.3
+- Fixed the VR settings panel showing only tiny dots: the panel and HUD were rotated 180 degrees (quads faced away and text was mirrored) and TextMesh text was about 10 times smaller than intended. The panel now faces the headset and the text is about 2 cm tall.
+- The VR HUD sat behind the camera because of the same rotation; it is now in front of you.
+- VR panel materials pick the first supported unlit shader and are drawn double-sided; the chosen shader is logged once.
+
 ## 1.8.2
 - Added a headset-visible world-space settings panel with right-controller pointing, trigger clicks, thumbstick scrolling, and a B+Y menu toggle.
 - Mirrored settings, HUD overlays, and post-processing through the stereo camera so they render to both eyes.
