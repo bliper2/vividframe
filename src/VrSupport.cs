@@ -7,34 +7,43 @@ namespace VividFrame
     internal static class VrSupport
     {
         public static bool Active { get; private set; }
+        public static bool HasPointer { get; private set; }
         public static Ray RightControllerRay { get; private set; }
+        public static Quaternion RightControllerRotation { get; private set; } = Quaternion.identity;
         public static bool TriggerHeld { get; private set; }
+        /// <summary>True only on the frame the trigger went down.</summary>
         public static bool TriggerDown { get; private set; }
-        public static float ScrollDelta { get; private set; }
+        /// <summary>Right stick Y after the dead zone, -1 to 1 (up is positive).</summary>
+        public static float StickY { get; private set; }
         public static bool MenuToggleDown { get; private set; }
 
-        private static bool _wasTriggerHeld;
-        private static bool _wasMenuChordHeld;
-        private static float _nextScroll;
-        private static float _nextProbe;
+        // Hysteresis on the analog trigger so a half pull cannot chatter between press and release.
+        private const float PressAt = 0.55f;
+        private const float ReleaseAt = 0.35f;
+        private const float StickDeadZone = 0.2f;
 
+        private static bool _wasMenuChordHeld;
+        private static int _frame = -1;
+
+        /// <summary>Call once per frame from OnUpdate. Edges last exactly one frame.</summary>
         public static void Tick()
         {
-            if (Time.unscaledTime < _nextProbe)
+            int frame = Time.frameCount;
+            if (frame == _frame)
                 return;
-            _nextProbe = Time.unscaledTime + 0.02f;
+            _frame = frame;
+
             TriggerDown = false;
             MenuToggleDown = false;
-            TriggerHeld = false;
-            ScrollDelta = 0f;
+            StickY = 0f;
+            HasPointer = false;
             try
             {
                 Camera camera = Camera.main;
                 Active = XRSettings.enabled && XRSettings.isDeviceActive && camera != null && camera.stereoEnabled;
                 if (!Active)
                 {
-                    _wasTriggerHeld = false;
-                    _wasMenuChordHeld = false;
+                    ResetHeld();
                     return;
                 }
 
@@ -46,28 +55,28 @@ namespace VividFrame
                     || !hand.TryGetFeatureValue(CommonUsages.devicePosition, out Vector3 handPosition)
                     || !hand.TryGetFeatureValue(CommonUsages.deviceRotation, out Quaternion handRotation))
                 {
-                    _wasTriggerHeld = false;
-                    _wasMenuChordHeld = false;
+                    ResetHeld();
                     return;
                 }
 
+                // Device poses are in tracking space; the camera tells us where tracking space sits in the world.
                 Quaternion originRotation = camera.transform.rotation * Quaternion.Inverse(headRotation);
                 Vector3 originPosition = camera.transform.position - originRotation * headPosition;
-                Vector3 rayOrigin = originPosition + originRotation * handPosition;
-                Vector3 rayDirection = originRotation * handRotation * Vector3.forward;
-                RightControllerRay = new Ray(rayOrigin, rayDirection);
+                Quaternion worldHand = originRotation * handRotation;
+                RightControllerRotation = worldHand;
+                RightControllerRay = new Ray(originPosition + originRotation * handPosition, worldHand * Vector3.forward);
+                HasPointer = true;
 
-                if (hand.TryGetFeatureValue(CommonUsages.triggerButton, out bool pressed))
-                    TriggerHeld = pressed;
-                TriggerDown = TriggerHeld && !_wasTriggerHeld;
-                _wasTriggerHeld = TriggerHeld;
+                bool held = TriggerHeld;
+                if (hand.TryGetFeatureValue(CommonUsages.trigger, out float pull))
+                    held = held ? pull > ReleaseAt : pull > PressAt;
+                else if (hand.TryGetFeatureValue(CommonUsages.triggerButton, out bool pressed))
+                    held = pressed;
+                TriggerDown = held && !TriggerHeld;
+                TriggerHeld = held;
 
-                if (hand.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 stick)
-                    && Mathf.Abs(stick.y) > 0.55f && Time.unscaledTime >= _nextScroll)
-                {
-                    ScrollDelta = stick.y > 0f ? -1f : 1f;
-                    _nextScroll = Time.unscaledTime + 0.16f;
-                }
+                if (hand.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 stick) && Mathf.Abs(stick.y) > StickDeadZone)
+                    StickY = Mathf.Sign(stick.y) * (Mathf.Abs(stick.y) - StickDeadZone) / (1f - StickDeadZone);
 
                 InputDevice left = InputDevices.GetDeviceAtXRNode(XRNode.LeftHand);
                 bool leftSecondary = left.isValid && left.TryGetFeatureValue(CommonUsages.secondaryButton, out bool lb) && lb;
@@ -75,23 +84,22 @@ namespace VividFrame
                 bool chord = leftSecondary && rightSecondary;
                 MenuToggleDown = chord && !_wasMenuChordHeld;
                 _wasMenuChordHeld = chord;
-
             }
             catch
             {
                 Active = false;
-                TriggerHeld = false;
-                TriggerDown = false;
-                MenuToggleDown = false;
-                ScrollDelta = 0f;
-                _wasTriggerHeld = false;
-                _wasMenuChordHeld = false;
+                ResetHeld();
             }
         }
 
-        public static void ConsumeTriggerDown()
+        private static void ResetHeld()
         {
+            HasPointer = false;
+            TriggerHeld = false;
             TriggerDown = false;
+            MenuToggleDown = false;
+            StickY = 0f;
+            _wasMenuChordHeld = false;
         }
 
         public static void ConsumeMenuToggleDown()

@@ -424,8 +424,13 @@ namespace VividFrame
 
         private void Remove<T>() where T : PostProcessEffectSettings
         {
-            if (_profile != null && _profile.HasSettings<T>())
-                _profile.RemoveSettings<T>();
+            // Deactivate rather than remove. RemoveSettings only drops the list entry and never destroys the
+            // settings object, so every toggle leaked one and AddSettings then built a new copy.
+            if (_profile == null || !_profile.HasSettings<T>())
+                return;
+            T settings = _profile.GetSetting<T>();
+            if (settings != null)
+                settings.active = false;
         }
 
         private static void SetFloat(FloatParameter parameter, float value)

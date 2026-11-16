@@ -38,7 +38,7 @@ Made by **mcperr**. MIT licensed and fully open source.
 
 ### VR controls
 
-When VRChat is rendering in stereo, VividFrame uses a world-space panel rendered in both eyes. Press both controllers' secondary buttons together (usually **B + Y**) to open or close it. Point the **right controller** at a setting and pull its trigger; use the right thumbstick up or down to scroll. The shared post-processing profile is applied through VRChat's stereo camera layers, so both eyes receive the same settings. FOV override and zoom do not change headset lens projection.
+When VRChat is rendering in stereo, the same glass menu as on desktop opens on a panel in front of you, with every tab and setting. Press both controllers' secondary buttons together (usually **B + Y**) to open or close it. Point the **right controller** at a control and pull the trigger to click or drag; pull twice on a slider to reset it. Push the right thumbstick up or down to scroll, and drag the title bar to move the panel. Settings, VR has the panel size and **Keep panel in view**, which brings the panel back in front of you when you turn away. FPS, stats, crosshair and messages show on a head-locked layer. The shared post-processing profile is applied through VRChat's stereo camera layers, so both eyes receive the same settings. FOV override and zoom do not change headset lens projection.
 
 ## Auto update
 

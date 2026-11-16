@@ -36,7 +36,7 @@ namespace VividFrame
 
         public readonly Color TextPrimary = new Color(0.96f, 0.96f, 0.98f, 1f);
         public readonly Color TextSecondary = new Color(0.70f, 0.70f, 0.74f, 1f);
-        public readonly Color TextMuted = new Color(0.60f, 0.60f, 0.64f, 1f);
+        public readonly Color TextMuted = new Color(0.68f, 0.68f, 0.72f, 1f);
 
         public GUIStyle Title;
         public GUIStyle Header;
@@ -479,8 +479,9 @@ namespace VividFrame
             {
                 case Shape.Panel:
                 {
-                    Color top = new Color(0.17f, 0.17f, 0.20f, 0.44f);
-                    Color bottom = new Color(0.05f, 0.05f, 0.07f, 0.60f);
+                    // Dense enough that light text stays readable over bright worlds and white skies.
+                    Color top = new Color(0.15f, 0.15f, 0.18f, 0.62f);
+                    Color bottom = new Color(0.05f, 0.05f, 0.07f, 0.74f);
                     fill = Color.Lerp(bottom, top, v);
                     float dx = u;
                     float dy = 1f - v;

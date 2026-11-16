@@ -81,13 +81,17 @@ namespace VividFrame
         private const float CloseSeconds = 0.15f;
         private const float TabSeconds = 0.18f;
         private const float ToastSeconds = 1.6f;
+        // Below this the glass lets bright worlds wash out the text.
+        private const float MinGlassOpacity = 0.45f;
 
         private readonly Settings _settings;
         private readonly Action _onChanged;
         private readonly MelonLogger.Instance _log;
         private readonly AutoFocus _autoFocus;
         private readonly ProfileStore _profiles;
-        private readonly GlassTheme _theme = new GlassTheme();
+        private readonly GlassTheme _deskTheme = new GlassTheme();
+        private readonly GlassTheme _vrTheme = new GlassTheme();
+        private GlassTheme _theme;
         private readonly Anim _anim = new Anim();
         private readonly Rect[] _tabRects = new Rect[9];
         private readonly int[] _subTab = new int[9];
@@ -191,12 +195,12 @@ namespace VividFrame
             if (HideOverlays || !_paint)
                 return;
             float s = _uiScale;
-            if (_settings.CinemaBars.Value)
+            if (_settings.CinemaBars.Value && !_vr)
             {
-                float bar = Mathf.Clamp(_settings.CinemaThickness.Value, 0.02f, 0.3f) * Screen.height;
+                float bar = Mathf.Clamp(_settings.CinemaThickness.Value, 0.02f, 0.3f) * ScreenH;
                 Color c = new Color(0f, 0f, 0f, Mathf.Clamp01(_settings.CinemaOpacity.Value));
-                _theme.FillRect(new Rect(0f, 0f, Screen.width, bar), c);
-                _theme.FillRect(new Rect(0f, Screen.height - bar, Screen.width, bar), c);
+                _theme.FillRect(new Rect(0f, 0f, ScreenW, bar), c);
+                _theme.FillRect(new Rect(0f, ScreenH - bar, ScreenW, bar), c);
             }
 
             for (int i = 0; i < 4; i++)
@@ -228,9 +232,9 @@ namespace VividFrame
             float gap = 6f * s;
             bool left = corner == 0 || corner == 2;
             bool top = corner == 0 || corner == 1;
-            float x = left ? m : Screen.width - w - m;
+            float x = left ? m : ScreenW - w - m;
             float offset = _cornerUsed[corner];
-            float y = top ? m + offset : Screen.height - h - m - offset;
+            float y = top ? m + offset : ScreenH - h - m - offset;
             Rect r = new Rect(x, y, w, h);
             _theme.Draw(Shape.Popup, r, h * 0.5f);
             Label(r, text, Style(_theme.Center));
@@ -239,8 +243,8 @@ namespace VividFrame
 
         private void DrawCrosshair(float s)
         {
-            float cx = Mathf.Round(Screen.width * 0.5f);
-            float cy = Mathf.Round(Screen.height * 0.5f);
+            float cx = Mathf.Round(ScreenW * 0.5f);
+            float cy = Mathf.Round(ScreenH * 0.5f);
             float size = Mathf.Max(2f, _settings.CrosshairSize.Value * s);
             float gap = Mathf.Max(0f, _settings.CrosshairGap.Value * s);
             float t = Mathf.Max(2f, Mathf.Round(1.6f * s));
@@ -298,6 +302,7 @@ namespace VividFrame
             _autoFocus = autoFocus;
             _profiles = profiles;
             _worlds = worlds;
+            _theme = _deskTheme;
             RegisterFavourites();
             LoadFavourites();
         }
@@ -443,7 +448,8 @@ namespace VividFrame
                     UnityEngine.Object.Destroy(retired);
             }
             _retiredBlurTextures.Clear();
-            _theme.Dispose();
+            _deskTheme.Dispose();
+            _vrTheme.Dispose();
         }
 
         private void WarnIfColoursExtreme()
@@ -462,7 +468,8 @@ namespace VividFrame
             SweepRetiredBlurTextures();
             SyncMotion();
             int accent = _settings.AccentIndex != null ? Mathf.Clamp(_settings.AccentIndex.Value, 0, AccentColors.Length - 1) : 0;
-            _theme.Accent = AccentColors[accent];
+            _deskTheme.Accent = AccentColors[accent];
+            _vrTheme.Accent = AccentColors[accent];
 
             if (_captureWait && Time.unscaledTime > _captureDeadline)
                 _captureWait = false;
@@ -499,7 +506,11 @@ namespace VividFrame
             Event ev = Event.current;
             if (ev == null || ev.type != EventType.Repaint)
                 return;
-            float s = Mathf.Clamp(Screen.height / 1080f, 0.75f, 2f);
+            DrawHudContent(Mathf.Clamp(ScreenH / 1080f, 0.75f, 2f));
+        }
+
+        private void DrawHudContent(float s)
+        {
             _theme.Ensure(s, _log);
             _paint = true;
             _uiScale = s;
@@ -515,7 +526,7 @@ namespace VividFrame
                 return;
             float w = 260f * s;
             float h = 30f * s;
-            Rect r = new Rect((Screen.width - w) * 0.5f, 28f * s + (1f - inT) * -8f * s, w, h);
+            Rect r = new Rect((ScreenW - w) * 0.5f, 28f * s + (1f - inT) * -8f * s, w, h);
             Color prev = GUI.color;
             GUI.color = new Color(prev.r, prev.g, prev.b, prev.a * alpha);
             _theme.Draw(Shape.Popup, r, h * 0.5f);
@@ -556,7 +567,7 @@ namespace VividFrame
                 _theme.Ensure(_uiScale, _log);
                 if (_paint)
                     DrawOverlays();
-                HandleInput(ev);
+                HandleInput();
                 DrawChrome();
             }
             catch (Exception ex)
@@ -570,6 +581,321 @@ namespace VividFrame
             }
         }
 
+        // ------------------------------------------------------------------ VR surface
+        // In VR the same menu is drawn into a RenderTexture during OnGUI's Repaint event and shown on a
+        // world-space quad by VrWorldMenu. Pointer input comes from the right controller, not Event.current.
+
+        /// <summary>Set when the VR pointer presses the title bar; VrWorldMenu then moves the panel in 3D.</summary>
+        public bool VrGrabRequested;
+
+        /// <summary>True after drawing into the VR texture threw once; the VR panel stays off.</summary>
+        public bool VrFailed { get { return _vrFailed; } }
+
+        private const float VrMaxScale = 1.8f;
+        private bool _vr;
+        private int _vrW;
+        private int _vrH;
+        private EventType _vrType = EventType.Ignore;
+        private Vector2 _vrMouse = new Vector2(-9999f, -9999f);
+        private bool _vrHeld;
+        private float _vrScrollY;
+        private int _vrClicks;
+        private float _vrLastDown = -9f;
+        private Vector2 _vrLastDownPos;
+        private Vector2 _vrClipOffset;
+        private readonly Rect[] _vrClipRects = new Rect[8];
+        private readonly Vector2[] _vrClipOffsets = new Vector2[8];
+        private int _vrClipDepth;
+        private bool _vrFailed;
+
+        private int ScreenW { get { return _vr ? _vrW : Screen.width; } }
+        private int ScreenH { get { return _vr ? _vrH : Screen.height; } }
+
+        /// <summary>
+        /// Pixel scale for the VR panel. IMGUI clips to the game window, so the texture is kept no larger
+        /// than the desktop mirror. Steps of 0.1 avoid rebuilding textures while the window is resized.
+        /// </summary>
+        public static float VrSurfaceScale()
+        {
+            float fit = Mathf.Min((Screen.width - 8f) / GlassTheme.BaseWidth, (Screen.height - 8f) / GlassTheme.BaseHeight);
+            float s = Mathf.Clamp(Mathf.Min(VrMaxScale, fit), 0.8f, VrMaxScale);
+            return Mathf.Floor(s * 10f) / 10f;
+        }
+
+        public static int VrSurfaceWidth(float scale) { return Mathf.CeilToInt(GlassTheme.BaseWidth * scale) + 4; }
+        public static int VrSurfaceHeight(float scale) { return Mathf.CeilToInt(GlassTheme.BaseHeight * scale) + 4; }
+
+        private EventType EvType()
+        {
+            if (_vr)
+            {
+                // A press outside the current clip (a scrolled-away row) must not reach hidden controls.
+                if (_vrType == EventType.MouseDown && _vrClipDepth > 0 && !_vrClipRects[_vrClipDepth - 1].Contains(_vrMouse))
+                    return EventType.Ignore;
+                return _vrType;
+            }
+            Event ev = Event.current;
+            return ev != null ? ev.type : EventType.Ignore;
+        }
+
+        private int EvButton()
+        {
+            if (_vr)
+                return 0;
+            Event ev = Event.current;
+            return ev != null ? ev.button : -1;
+        }
+
+        private bool EvShift()
+        {
+            if (_vr)
+                return false;
+            Event ev = Event.current;
+            return ev != null && ev.shift;
+        }
+
+        private KeyCode EvKey()
+        {
+            if (_vr)
+                return KeyCode.None;
+            Event ev = Event.current;
+            return ev != null ? ev.keyCode : KeyCode.None;
+        }
+
+        private int EvClicks()
+        {
+            if (_vr)
+                return _vrClicks;
+            Event ev = Event.current;
+            return ev != null ? ev.clickCount : 0;
+        }
+
+        private Vector2 EvDelta()
+        {
+            if (_vr)
+                return new Vector2(0f, _vrScrollY);
+            Event ev = Event.current;
+            return ev != null ? ev.delta : Vector2.zero;
+        }
+
+        private void EvUse()
+        {
+            if (_vr)
+            {
+                _vrType = EventType.Used;
+                return;
+            }
+            Event ev = Event.current;
+            if (ev != null && ev.type != EventType.Repaint && ev.type != EventType.Layout)
+                ev.Use();
+        }
+
+        private void BeginClip(Rect rect)
+        {
+            GUI.BeginClip(rect);
+            if (!_vr || _vrClipDepth >= _vrClipRects.Length)
+                return;
+            Rect abs = new Rect(rect.x + _vrClipOffset.x, rect.y + _vrClipOffset.y, rect.width, rect.height);
+            if (_vrClipDepth > 0)
+            {
+                Rect parent = _vrClipRects[_vrClipDepth - 1];
+                float x0 = Mathf.Max(abs.x, parent.x);
+                float y0 = Mathf.Max(abs.y, parent.y);
+                float x1 = Mathf.Min(abs.xMax, parent.xMax);
+                float y1 = Mathf.Min(abs.yMax, parent.yMax);
+                abs = new Rect(x0, y0, Mathf.Max(0f, x1 - x0), Mathf.Max(0f, y1 - y0));
+            }
+            _vrClipOffsets[_vrClipDepth] = _vrClipOffset;
+            _vrClipRects[_vrClipDepth] = abs;
+            _vrClipDepth++;
+            _vrClipOffset = new Vector2(_vrClipOffset.x + rect.x, _vrClipOffset.y + rect.y);
+        }
+
+        private void EndClip()
+        {
+            GUI.EndClip();
+            if (!_vr || _vrClipDepth <= 0)
+                return;
+            _vrClipDepth--;
+            _vrClipOffset = _vrClipOffsets[_vrClipDepth];
+        }
+
+        /// <summary>
+        /// Draws the full menu into <paramref name="rt"/>. Call from OnGUI on the Repaint event only.
+        /// <paramref name="pointer"/> is in texture pixels with the origin at the top left.
+        /// </summary>
+        public bool DrawVr(RenderTexture rt, Vector2 pointer, bool pointerOn, bool down, bool held, bool up, float scroll)
+        {
+            if (rt == null || !Visible || _openT <= 0.001f || _vrFailed)
+                return false;
+            Event real = Event.current;
+            if (real == null || real.type != EventType.Repaint)
+                return false;
+
+            RenderTexture previous = RenderTexture.active;
+            Rect savedArea = _area;
+            float savedScale = _uiScale;
+            bool savedDragging = _dragging;
+            bool savedResizing = _resizing;
+            bool pushed = false;
+            bool ok = false;
+            _vr = true;
+            _theme = _vrTheme;
+            _vrW = rt.width;
+            _vrH = rt.height;
+            _uiScale = (rt.width - 4f) / GlassTheme.BaseWidth;
+            _area = new Rect(2f, 2f, rt.width - 4f, rt.height - 4f);
+            _dragging = false;
+            _resizing = false;
+            _vrMouse = pointerOn || held ? pointer : new Vector2(-9999f, -9999f);
+            _vrHeld = held;
+            _vrClipDepth = 0;
+            _vrClipOffset = Vector2.zero;
+            try
+            {
+                RenderTexture.active = rt;
+                GL.PushMatrix();
+                pushed = true;
+                GL.LoadPixelMatrix(0f, rt.width, rt.height, 0f);
+                _theme.Ensure(_uiScale, _log);
+
+                if (down && pointerOn)
+                {
+                    float now = Time.unscaledTime;
+                    float near = 16f * _uiScale;
+                    bool second = now - _vrLastDown < 0.4f && (pointer - _vrLastDownPos).sqrMagnitude < near * near;
+                    _vrClicks = second ? 2 : 1;
+                    _vrLastDown = second ? -9f : now;
+                    _vrLastDownPos = pointer;
+                    VrInputPass(EventType.MouseDown);
+                }
+                else if (held)
+                {
+                    VrInputPass(EventType.MouseDrag);
+                }
+                if (up)
+                    VrInputPass(EventType.MouseUp);
+                if (pointerOn && Mathf.Abs(scroll) > 0.001f)
+                {
+                    _vrScrollY = scroll;
+                    VrInputPass(EventType.ScrollWheel);
+                    _vrScrollY = 0f;
+                }
+
+                _vrType = EventType.Repaint;
+                _paint = true;
+                _vrClipDepth = 0;
+                _vrClipOffset = Vector2.zero;
+                GL.Clear(true, true, new Color(0.06f, 0.06f, 0.08f, 0f));
+                DrawChrome();
+                if (pointerOn)
+                    DrawVrPointer(held);
+                ok = true;
+            }
+            catch (Exception ex)
+            {
+                _vrFailed = true;
+                _log?.Error("VR menu drawing failed and the VR panel was turned off: {0}", ex);
+            }
+            finally
+            {
+                if (pushed)
+                {
+                    try { GL.PopMatrix(); } catch { }
+                }
+                RenderTexture.active = previous;
+                _vr = false;
+                _theme = _deskTheme;
+                _area = savedArea;
+                _uiScale = savedScale;
+                _dragging = savedDragging;
+                _resizing = savedResizing;
+                _vrType = EventType.Ignore;
+                _vrClipDepth = 0;
+                _vrClipOffset = Vector2.zero;
+            }
+            return ok;
+        }
+
+        private void VrInputPass(EventType type)
+        {
+            // Mirrors the desktop order: input handling, then the controls, which see a used event as used.
+            _vrType = type;
+            _paint = false;
+            _vrClipDepth = 0;
+            _vrClipOffset = Vector2.zero;
+            HandleInput();
+            DrawChrome();
+        }
+
+        private void DrawVrPointer(bool held)
+        {
+            float d = (held ? 11f : 14f) * _uiScale;
+            Color prev = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, 0.95f);
+            _theme.DrawKnob(new Rect(_vrMouse.x - d * 0.5f, _vrMouse.y - d * 0.5f, d, d));
+            GUI.color = prev;
+        }
+
+        /// <summary>Draws the stats, crosshair and toasts into a head-locked HUD texture. Repaint only.</summary>
+        public bool DrawVrHud(RenderTexture rt, float scale)
+        {
+            if (rt == null || _vrFailed)
+                return false;
+            Event real = Event.current;
+            if (real == null || real.type != EventType.Repaint)
+                return false;
+            RenderTexture previous = RenderTexture.active;
+            float savedScale = _uiScale;
+            bool pushed = false;
+            bool ok = false;
+            _vr = true;
+            _theme = _vrTheme;
+            _vrW = rt.width;
+            _vrH = rt.height;
+            _vrMouse = new Vector2(-9999f, -9999f);
+            try
+            {
+                RenderTexture.active = rt;
+                GL.PushMatrix();
+                pushed = true;
+                GL.LoadPixelMatrix(0f, rt.width, rt.height, 0f);
+                GL.Clear(true, true, new Color(0f, 0f, 0f, 0f));
+                DrawHudContent(scale);
+                ok = true;
+            }
+            catch (Exception ex)
+            {
+                _vrFailed = true;
+                _log?.Error("VR HUD drawing failed and VR overlays were turned off: {0}", ex);
+            }
+            finally
+            {
+                if (pushed)
+                {
+                    try { GL.PopMatrix(); } catch { }
+                }
+                RenderTexture.active = previous;
+                _vr = false;
+                _theme = _deskTheme;
+                _uiScale = savedScale;
+                _vrType = EventType.Ignore;
+            }
+            return ok;
+        }
+
+        /// <summary>True when the VR HUD has something to show this frame.</summary>
+        public bool VrHudWanted
+        {
+            get
+            {
+                bool overlays = !HideOverlays && (_settings.FpsOverlay.Value || _settings.Crosshair.Value
+                    || _settings.StatClock.Value || _settings.StatTimer.Value || _settings.StatPosition.Value
+                    || _settings.StatRam.Value || _settings.StatPlayers.Value);
+                return overlays || HudActive;
+            }
+        }
+
         private void SyncMotion()
         {
             _lowCost = _settings != null && _settings.LowCostUi != null && _settings.LowCostUi.Value;
@@ -578,36 +904,37 @@ namespace VividFrame
             _anim.Speed = (_settings != null && _settings.AnimationSpeed != null) ? _settings.AnimationSpeed.Value : 1f;
         }
 
-        private void HandleInput(Event ev)
+        private void HandleInput()
         {
-            if (_dropId != 0 && ev.type == EventType.KeyDown && ev.keyCode == KeyCode.Escape)
+            EventType type = EvType();
+            if (_dropId != 0 && type == EventType.KeyDown && EvKey() == KeyCode.Escape)
             {
                 CloseDropdown();
-                ev.Use();
+                EvUse();
                 return;
             }
 
-            if (_captureKey && ev.type == EventType.KeyDown)
+            if (_captureKey && type == EventType.KeyDown)
             {
-                KeyCode key = ev.keyCode;
+                KeyCode key = EvKey();
                 if (key != KeyCode.None && key != KeyCode.Escape && key != KeyCode.Mouse0 && key != KeyCode.Mouse1)
                 {
                     _settings.MenuKey.Value = key.ToString();
                     _captureKey = false;
                     Toast("Menu key  " + key);
-                    ev.Use();
+                    EvUse();
                     return;
                 }
                 if (key == KeyCode.Escape)
                 {
                     _captureKey = false;
-                    ev.Use();
+                    EvUse();
                     return;
                 }
             }
 
             Vector2 mouse = MouseGui();
-            if (_editKey != null && ev.type == EventType.MouseDown && !_editRect.Contains(mouse))
+            if (_editKey != null && type == EventType.MouseDown && !_editRect.Contains(mouse))
                 _editKey = null;
             if (_activeSlider != 0 && !MouseHeld())
                 _activeSlider = 0;
@@ -618,17 +945,18 @@ namespace VividFrame
                     ApplyResize(mouse);
                 else
                     EndResize();
-                if (ev.type == EventType.MouseDrag || ev.type == EventType.MouseUp)
-                    ev.Use();
+                if (type == EventType.MouseDrag || type == EventType.MouseUp)
+                    EvUse();
                 return;
             }
-            if (ev.type == EventType.MouseDown && ev.button == 0 && _dropId == 0 && _openT > 0.95f && !_dragging)
+            // Corner resize and window drag are desktop only; in VR the whole panel is moved in 3D instead.
+            if (!_vr && type == EventType.MouseDown && EvButton() == 0 && _dropId == 0 && _openT > 0.95f && !_dragging)
             {
                 int corner = CornerAt(mouse);
                 if (corner >= 0)
                 {
                     BeginResize(corner);
-                    ev.Use();
+                    EvUse();
                     return;
                 }
             }
@@ -650,16 +978,16 @@ namespace VividFrame
                 }
             }
 
-            if (ev.type == EventType.ScrollWheel && _bodyRect.width > 0f && _bodyRect.Contains(mouse))
+            if (type == EventType.ScrollWheel && _bodyRect.width > 0f && _bodyRect.Contains(mouse))
             {
                 if (_dropId != 0)
                 {
                     CloseDropdown();
-                    ev.Use();
+                    EvUse();
                     return;
                 }
-                _scroll += ev.delta.y * 18f * _uiScale;
-                ev.Use();
+                _scroll += EvDelta().y * 18f * _uiScale;
+                EvUse();
             }
 
             float maxScroll = Mathf.Max(0f, _contentH - _bodyRect.height);
@@ -707,11 +1035,11 @@ namespace VividFrame
 
         private void ApplyResize(Vector2 mouse)
         {
-            float screenFactor = Mathf.Clamp(Screen.height / 1080f, 0.75f, 2f);
+            float screenFactor = Mathf.Clamp(ScreenH / 1080f, 0.75f, 2f);
             float rawW = Mathf.Abs(mouse.x - _resizeAnchor.x) / GlassTheme.BaseWidth;
             float rawH = Mathf.Abs(mouse.y - _resizeAnchor.y) / GlassTheme.BaseHeight;
             float total = Mathf.Max(rawW, rawH);
-            float fit = Mathf.Min((Screen.width - 16f) / GlassTheme.BaseWidth, (Screen.height - 16f) / GlassTheme.BaseHeight);
+            float fit = Mathf.Min((ScreenW - 16f) / GlassTheme.BaseWidth, (ScreenH - 16f) / GlassTheme.BaseHeight);
             float hi = Mathf.Min(fit, 2f * screenFactor);
             float lo = Mathf.Min(0.75f * screenFactor, hi);
             total = Mathf.Clamp(total, lo, hi);
@@ -738,7 +1066,7 @@ namespace VividFrame
 
         private void DrawGrips(Rect area)
         {
-            if (!_paint)
+            if (!_paint || _vr)
                 return;
             Vector2 mouse = MouseGui();
             for (int i = 0; i < 4; i++)
@@ -790,15 +1118,15 @@ namespace VividFrame
         {
             float scale = _uiScale;
             if (scale < 0.1f)
-                scale = Mathf.Clamp(Screen.height / 1080f, 0.75f, 2f);
+                scale = Mathf.Clamp(ScreenH / 1080f, 0.75f, 2f);
             _uiScale = scale;
-            float width = Mathf.Min(GlassTheme.BaseWidth * scale, Screen.width - 24f);
-            float height = Mathf.Min(GlassTheme.BaseHeight * scale, Screen.height - 24f);
+            float width = Mathf.Min(GlassTheme.BaseWidth * scale, ScreenW - 24f);
+            float height = Mathf.Min(GlassTheme.BaseHeight * scale, ScreenH - 24f);
             width = Mathf.Max(480f, width);
             height = Mathf.Max(320f, height);
             _area = new Rect(
-                Mathf.Round((Screen.width - width) * 0.5f),
-                Mathf.Round((Screen.height - height) * 0.5f),
+                Mathf.Round((ScreenW - width) * 0.5f),
+                Mathf.Round((ScreenH - height) * 0.5f),
                 width,
                 height);
             ClampToScreen();
@@ -806,10 +1134,10 @@ namespace VividFrame
 
         private void ClampToScreen()
         {
-            float width = Mathf.Min(_area.width, Screen.width - 16f);
-            float height = Mathf.Min(_area.height, Screen.height - 16f);
-            float x = Mathf.Clamp(_area.x, 8f, Mathf.Max(8f, Screen.width - width - 8f));
-            float y = Mathf.Clamp(_area.y, 8f, Mathf.Max(8f, Screen.height - height - 8f));
+            float width = Mathf.Min(_area.width, ScreenW - 16f);
+            float height = Mathf.Min(_area.height, ScreenH - 16f);
+            float x = Mathf.Clamp(_area.x, 8f, Mathf.Max(8f, ScreenW - width - 8f));
+            float y = Mathf.Clamp(_area.y, 8f, Mathf.Max(8f, ScreenH - height - 8f));
             _area = new Rect(x, y, width, height);
         }
 
@@ -905,16 +1233,23 @@ namespace VividFrame
                 _theme.DrawApproxRim(area, new Color(1f, 1f, 1f, 0.28f));
                 return;
             }
-            if (!_lowCost)
+            if (_vr)
+            {
+                // No game frame sits behind the VR texture, so give the glass a solid base to stay readable.
+                _theme.FillRounded(area, radius, new Color(0.06f, 0.06f, 0.08f, 0.94f));
+            }
+            else if (!_lowCost)
+            {
                 _theme.DrawShadow(area, radius);
+            }
 
-            if (_blurTex != null && _settings.FrostBlur.Value && !_blurBroken)
+            if (!_vr && _blurTex != null && _settings.FrostBlur.Value && !_blurBroken)
             {
                 // Inset by ~0.29 of the corner radius so the square snapshot stays inside the rounded glass.
                 float inset = Mathf.Ceil(radius * 0.3f);
                 Rect ir = new Rect(area.x + inset, area.y + inset, area.width - inset * 2f, area.height - inset * 2f);
-                float sw = Mathf.Max(1f, Screen.width);
-                float sh = Mathf.Max(1f, Screen.height);
+                float sw = Mathf.Max(1f, ScreenW);
+                float sh = Mathf.Max(1f, ScreenH);
                 Rect uv = new Rect(ir.x / sw, 1f - ir.yMax / sh, ir.width / sw, ir.height / sh);
                 try
                 {
@@ -927,7 +1262,7 @@ namespace VividFrame
                 }
             }
 
-            float opacity = Mathf.Clamp(_settings.GlassOpacity.Value, 0.2f, 1f);
+            float opacity = Mathf.Clamp(_settings.GlassOpacity.Value, MinGlassOpacity, 1f);
             if (opacity >= 0.995f)
                 _theme.Draw(Shape.Panel, area, radius);
             else
@@ -1121,7 +1456,7 @@ namespace VividFrame
             Rect key = new Rect(hide.x - gap - keyW, hide.y, keyW, hide.height);
             string keyName = _settings != null && _settings.MenuKey != null ? _settings.MenuKey.Value : "Home";
             if (Chip(key, keyName, false, 70))
-                { }
+                SwitchTab(6);
             if (Chip(hide, "hide", false, 71))
                 SetOpen(false);
 
@@ -1132,8 +1467,16 @@ namespace VividFrame
         {
             if (_dropId != 0)
                 return;
-            if (Event.current != null && Event.current.type == EventType.MouseDown && Event.current.button == 0 && drag.Contains(MouseGui()))
+            if (EvType() == EventType.MouseDown && EvButton() == 0 && drag.Contains(MouseGui()))
             {
+                if (_vr)
+                {
+                    // The VR panel is moved in 3D by the world-space menu while the trigger stays held.
+                    VrGrabRequested = true;
+                    CloseDropdown();
+                    EvUse();
+                    return;
+                }
                 _dragging = true;
                 _dragOffset = MouseGui() - new Vector2(_area.x, _area.y);
                 CloseDropdown();
@@ -1242,7 +1585,7 @@ namespace VividFrame
             if (_paint)
                 GUI.color = new Color(prev.r, prev.g, prev.b, prev.a * alpha);
 
-            GUI.BeginClip(rect);
+            BeginClip(rect);
             float y = 2f * _uiScale - _scroll;
             float w = rect.width;
             DrawTab(_tab, offsetX, ref y, w);
@@ -1250,7 +1593,7 @@ namespace VividFrame
             float maxScroll = Mathf.Max(0f, _contentH - rect.height);
             if (_scroll > maxScroll)
                 _scroll = maxScroll;
-            GUI.EndClip();
+            EndClip();
 
             if (_paint)
                 GUI.color = prev;
@@ -1549,12 +1892,12 @@ namespace VividFrame
             }
             if (shown == 0)
             {
-                Hint(x0, ref y0, cw, "Nothing pinned yet. Shift-click any slider or switch to pin it here.");
+                Hint(x0, ref y0, cw, _vr ? "Nothing pinned yet. Pin controls with Shift-click in the desktop menu." : "Nothing pinned yet. Shift-click any slider or switch to pin it here.");
             }
             else
             {
                 float yh = Mathf.Max(y0, y1);
-                Hint(x0, ref yh, w, "Shift-click a pinned control to remove it. Double-click a slider to reset it. Right-click to type a value.");
+                Hint(x0, ref yh, w, _vr ? "Double-click a slider with the trigger to reset it." : "Shift-click a pinned control to remove it. Double-click a slider to reset it. Right-click to type a value.");
                 y0 = yh;
             }
             y = Mathf.Max(y0, y1);
@@ -1702,7 +2045,7 @@ namespace VividFrame
             Hint(x, ref y, w, "Saved as JSON in UserData/VividFrame/profiles. Copy a file to export or import it.");
 
             float row = 26f * _uiScale;
-            if (!_textFieldMissing)
+            if (!_textFieldMissing && !_vr)
             {
                 if (_paint)
                     Label(new Rect(x, y, 90f * _uiScale, row), "Name", Style(_theme.Label));
@@ -1711,7 +2054,7 @@ namespace VividFrame
             }
             else
             {
-                Hint(x, ref y, w, "Text fields are unavailable. Use the Profile 1-3 slots.");
+                Hint(x, ref y, w, _vr ? "Typing is not available in VR. Pick a Profile 1-3 slot." : "Text fields are unavailable. Use the Profile 1-3 slots.");
                 ChipRow(x, ref y, w, ProfileSlots, _profileName, slot => { _profileName = slot; _selectedProfile = slot; }, 3);
             }
 
@@ -1771,7 +2114,9 @@ namespace VividFrame
                 _captureKey = false;
                 Toast("Menu key  " + picked);
             }, 4);
-            if (WideButton(x0, ref y0, cw, _captureKey ? "Press a key..." : "Press key to bind", 93))
+            if (_vr)
+                Hint(x0, ref y0, cw, "Binding a custom key needs the keyboard. Use the desktop menu for that.");
+            else if (WideButton(x0, ref y0, cw, _captureKey ? "Press a key..." : "Press key to bind", 93))
                 _captureKey = !_captureKey;
 
             Section(x1, ref y1, cw, "INTERFACE");
@@ -1783,7 +2128,7 @@ namespace VividFrame
             Hint(x1, ref y1, cw, "Low-cost UI turns off shadows and animations. Change scale if the menu is too large or small.");
 
             Section(x1, ref y1, cw, "APPEARANCE");
-            Slider(x1, ref y1, cw, "Glass opacity", _settings.GlassOpacity, 0.2f, 1f, "0.00");
+            Slider(x1, ref y1, cw, "Glass opacity", _settings.GlassOpacity, MinGlassOpacity, 1f, "0.00");
             Label(new Rect(x1, y1, cw, 20f * _uiScale), "Accent colour", Style(_theme.Label));
             y1 += 22f * _uiScale;
             ChipRow(x1, ref y1, cw, AccentNames, AccentNames[Mathf.Clamp(_settings.AccentIndex.Value, 0, AccentNames.Length - 1)], picked =>
@@ -1806,11 +2151,16 @@ namespace VividFrame
             HotkeyRow(x0, ref y0, cw, "Next profile", _settings.ProfileKey);
             Hint(x0, ref y0, cw, "Hotkeys work while the menu is closed.");
 
+            Section(x0, ref y0, cw, "VR");
+            Slider(x0, ref y0, cw, "Panel size", _settings.VrPanelSize, 0.7f, 1.4f, "0.00");
+            Switch(x0, ref y0, cw, "Keep panel in view", _settings.VrFollow);
+            Hint(x0, ref y0, cw, "B + Y opens the panel. Point with the right controller, pull the trigger to click, scroll with the right stick and drag the title bar to move it.");
+
             Section(x1, ref y1, cw, "WORLD PROFILES");
             Switch(x1, ref y1, cw, "Auto-load per world", _settings.AutoProfiles);
             if (_worlds != null && _worlds.Available)
             {
-                _worlds.Refresh();
+                // The mod polls the world each second; refreshing here would swallow the change it waits for.
                 string world = string.IsNullOrEmpty(_worlds.CurrentName) ? "Not in a world" : _worlds.CurrentName;
                 string pinned = _worlds.PinnedForCurrent();
                 Hint(x1, ref y1, cw, world + (string.IsNullOrEmpty(pinned) ? "  -  no profile pinned" : "  -  pinned: " + pinned));
@@ -1868,7 +2218,7 @@ namespace VividFrame
             if (index < 0)
                 index = 0;
             string label = HotKeyChoices[index];
-            int id = 700 + (name.GetHashCode() & 0xFF);
+            int id = KeyId(0x30000000, entry.Identifier);
             if (_paint)
             {
                 DrawPillBase(field, 10f * _uiScale, _dropId == id, HoverAmount(field, id), 0f);
@@ -1888,9 +2238,7 @@ namespace VividFrame
             }
             if (HeaderClicked(field))
             {
-                Event ev = Event.current;
-                if (ev != null)
-                    ev.Use();
+                EvUse();
                 if (_dropId == id)
                     CloseDropdown();
                 else
@@ -2005,13 +2353,12 @@ namespace VividFrame
 
         private bool PinClick(Rect row, string key)
         {
-            Event ev = Event.current;
-            if (ev == null || _dropId != 0 || ev.type != EventType.MouseDown || ev.button != 0 || !ev.shift)
+            if (_dropId != 0 || EvType() != EventType.MouseDown || EvButton() != 0 || !EvShift())
                 return false;
             if (!row.Contains(MouseGui()))
                 return false;
             ToggleFavourite(key);
-            ev.Use();
+            EvUse();
             return true;
         }
 
@@ -2027,12 +2374,11 @@ namespace VividFrame
 
         private bool RightClicked(Rect row)
         {
-            Event ev = Event.current;
-            if (ev == null || _dropId != 0 || ev.type != EventType.MouseDown || ev.button != 1)
+            if (_dropId != 0 || EvType() != EventType.MouseDown || EvButton() != 1)
                 return false;
             if (!row.Contains(MouseGui()))
                 return false;
-            ev.Use();
+            EvUse();
             return true;
         }
 
@@ -2047,28 +2393,28 @@ namespace VividFrame
         private bool DrawEditField(Rect field, out float parsed)
         {
             parsed = 0f;
-            Event ev = Event.current;
             _editRect = ToUnclipped(field);
-            if (ev != null && ev.type == EventType.KeyDown)
+            if (EvType() == EventType.KeyDown)
             {
-                if (ev.keyCode == KeyCode.Escape)
+                KeyCode code = EvKey();
+                if (code == KeyCode.Escape)
                 {
                     _editKey = null;
-                    ev.Use();
+                    EvUse();
                     return false;
                 }
-                if (ev.keyCode == KeyCode.Return || ev.keyCode == KeyCode.KeypadEnter)
+                if (code == KeyCode.Return || code == KeyCode.KeypadEnter)
                 {
                     bool ok = float.TryParse(_editText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out parsed)
                               || float.TryParse(_editText, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.CurrentCulture, out parsed);
                     _editKey = null;
-                    ev.Use();
+                    EvUse();
                     return ok;
                 }
             }
             if (_paint)
                 _theme.Draw(Shape.Field, field, 8f * _uiScale);
-            if (_textFieldMissing)
+            if (_textFieldMissing || _vr)
                 return false;
             try
             {
@@ -2096,7 +2442,7 @@ namespace VividFrame
         private void Slider(float x, ref float y, float w, string name, MelonPreferences_Entry<float> entry, float min, float max, string format)
         {
             string key = entry.Identifier;
-            int id = 3000 + name.GetHashCode();
+            int id = KeyId(0x10000000, key);
             float labelH = 16f * _uiScale;
             float total = GlassTheme.SliderRow * _uiScale;
             Rect row = new Rect(x, y, w, total);
@@ -2140,7 +2486,7 @@ namespace VividFrame
         private void IntSlider(float x, ref float y, float w, string name, MelonPreferences_Entry<int> entry, int min, int max)
         {
             string key = entry.Identifier;
-            int id = 3000 + (name.GetHashCode() ^ 17);
+            int id = KeyId(0x18000000, key);
             float labelH = 16f * _uiScale;
             float total = GlassTheme.SliderRow * _uiScale;
             Rect row = new Rect(x, y, w, total);
@@ -2179,15 +2525,15 @@ namespace VividFrame
         {
             Rect fat = new Rect(track.x, track.y - 6f * _uiScale, track.width, track.height + 12f * _uiScale);
             float next = value;
-            Event ev = Event.current;
+            EventType type = EvType();
             Vector2 mouse = MouseGui();
             int cid = ControlId(id, fat);
             bool hot = IsHot(cid, id);
-            if (ev != null && _dropId == 0)
+            if (_dropId == 0)
             {
-                if (ev.type == EventType.MouseDown && ev.button == 0 && fat.Contains(mouse))
+                if (type == EventType.MouseDown && EvButton() == 0 && fat.Contains(mouse))
                 {
-                    if (ev.clickCount >= 2)
+                    if (EvClicks() >= 2)
                     {
                         // Double-click resets to the default value.
                         next = Mathf.Clamp(def, min, max);
@@ -2197,18 +2543,18 @@ namespace VividFrame
                         Grab(cid, id);
                         next = SliderValue(fat, mouse.x, min, max);
                     }
-                    ev.Use();
+                    EvUse();
                 }
-                else if (hot && (ev.type == EventType.MouseDrag || MouseHeld()))
+                else if (hot && (type == EventType.MouseDrag || MouseHeld()))
                 {
                     next = SliderValue(fat, mouse.x, min, max);
-                    if (ev.type == EventType.MouseDrag)
-                        ev.Use();
+                    if (type == EventType.MouseDrag)
+                        EvUse();
                 }
-                if (hot && ev.type == EventType.MouseUp)
+                if (hot && type == EventType.MouseUp)
                 {
                     Release(cid, id);
-                    ev.Use();
+                    EvUse();
                 }
             }
 
@@ -2249,7 +2595,7 @@ namespace VividFrame
 
         private int ControlId(int id, Rect rect)
         {
-            if (!_hotControlOk)
+            if (!_hotControlOk || _vr)
                 return id;
             try
             {
@@ -2264,7 +2610,7 @@ namespace VividFrame
 
         private bool IsHot(int cid, int id)
         {
-            if (_hotControlOk)
+            if (_hotControlOk && !_vr)
             {
                 try { return GUIUtility.hotControl == cid; }
                 catch { _hotControlOk = false; }
@@ -2274,7 +2620,7 @@ namespace VividFrame
 
         private void Grab(int cid, int id)
         {
-            if (_hotControlOk)
+            if (_hotControlOk && !_vr)
             {
                 try { GUIUtility.hotControl = cid; return; }
                 catch { _hotControlOk = false; }
@@ -2284,7 +2630,7 @@ namespace VividFrame
 
         private void Release(int cid, int id)
         {
-            if (_hotControlOk)
+            if (_hotControlOk && !_vr)
             {
                 try
                 {
@@ -2306,7 +2652,7 @@ namespace VividFrame
             Rect rowRect = new Rect(x, y, w, h);
             Tip(rowRect, key);
             bool pinned = PinClick(rowRect, key);
-            int id = 2000 + name.GetHashCode();
+            int id = KeyId(0x20000000, key);
             bool on = entry.Value;
             float pillW = 36f * _uiScale;
             float pillH = 20f * _uiScale;
@@ -2363,9 +2709,7 @@ namespace VividFrame
 
             if (HeaderClicked(field))
             {
-                Event ev = Event.current;
-                if (ev != null)
-                    ev.Use();
+                EvUse();
                 if (_dropId == id)
                     CloseDropdown();
                 else
@@ -2395,7 +2739,7 @@ namespace VividFrame
             if (_dropId == 0 || _dropOptions == null || _dropOptions.Length == 0)
                 return;
 
-            Event ev = Event.current;
+            EventType type = EvType();
             Vector2 mouse = MouseGui();
             Rect header = _dropHeader;
             float rowH = 26f * _uiScale;
@@ -2419,7 +2763,7 @@ namespace VividFrame
                 ? new Rect(header.x, header.y - gap - height, header.width, height)
                 : new Rect(header.x, header.yMax + gap, header.width, height);
 
-            if (ev != null && ev.type == EventType.MouseDown && ev.button == 0)
+            if (type == EventType.MouseDown && EvButton() == 0)
             {
                 if (_dropJustOpened)
                 {
@@ -2430,7 +2774,7 @@ namespace VividFrame
                     float contentY = flip ? (height - fullH) : 0f;
                     float localY = mouse.y - list.y - contentY - pad;
                     int i = Mathf.FloorToInt(localY / rowH);
-                    ev.Use();
+                    EvUse();
                     if (i >= 0 && i < _dropOptions.Length)
                     {
                         if (_dropPick != null)
@@ -2442,11 +2786,11 @@ namespace VividFrame
                 else if (!header.Contains(mouse))
                 {
                     CloseDropdown();
-                    ev.Use();
+                    EvUse();
                     return;
                 }
             }
-            else if (_dropJustOpened && ev != null && ev.type != EventType.MouseDown)
+            else if (_dropJustOpened && type != EventType.MouseDown && type != EventType.Used)
                 _dropJustOpened = false;
 
             if (!_paint || height < 1f)
@@ -2455,7 +2799,7 @@ namespace VividFrame
             Color prev = GUI.color;
             GUI.color = new Color(prev.r, prev.g, prev.b, prev.a * (0.4f + 0.6f * openT));
 
-            GUI.BeginClip(list);
+            BeginClip(list);
             float originY = flip ? (height - fullH) : 0f;
             // Fixed-size popup texture inside the clip, so the open animation never rebuilds it.
             _theme.Draw(Shape.Popup, new Rect(0f, originY, list.width, fullH), 12f * _uiScale);
@@ -2474,7 +2818,7 @@ namespace VividFrame
                 }
                 Label(new Rect(row.x + 22f * _uiScale, row.y, row.width - 28f * _uiScale, row.height), _dropOptions[i], Style(_theme.Label));
             }
-            GUI.EndClip();
+            EndClip();
             GUI.color = prev;
         }
 
@@ -2485,8 +2829,7 @@ namespace VividFrame
 
         private bool HeaderClicked(Rect field)
         {
-            Event ev = Event.current;
-            return ev != null && ev.type == EventType.MouseDown && ev.button == 0 && field.Contains(MouseGui());
+            return EvType() == EventType.MouseDown && EvButton() == 0 && field.Contains(MouseGui());
         }
 
         private void CloseDropdown()
@@ -2544,9 +2887,13 @@ namespace VividFrame
             _content.text = Empty;
             _content.tooltip = Empty;
             GUIStyle inv = _theme.Invisible;
-            if (inv != null)
+            if (inv != null && !_vr)
                 return GUI.Button(rect, _content, inv);
-            return Clicked(rect);
+            if (!Clicked(rect))
+                return false;
+            // Consume the press like GUI.Button does, so nothing drawn later reacts to the same click.
+            EvUse();
+            return true;
         }
 
         private void DrawTextField(Rect field)
@@ -2585,7 +2932,7 @@ namespace VividFrame
                 {
                     if (string.Equals(_profileList[i], name, StringComparison.OrdinalIgnoreCase))
                     {
-                        Toast("Already exists — use Overwrite");
+                        Toast("Already exists. Use Overwrite");
                         return false;
                     }
                 }
@@ -2685,8 +3032,19 @@ namespace VividFrame
             return text;
         }
 
+        /// <summary>
+        /// Control id from the preference identifier, so two controls that share a label (several
+        /// "Intensity" sliders) never share drag, hover or animation state. Low 4 bits stay free for offsets.
+        /// </summary>
+        private static int KeyId(int band, string key)
+        {
+            return band | (((key ?? Empty).GetHashCode() & 0x007FFFFF) << 4);
+        }
+
         private void Label(Rect rect, string text, GUIStyle style)
         {
+            if (!_paint)
+                return;
             if (style != null)
                 GUI.Label(rect, text, style);
             else
@@ -2703,8 +3061,10 @@ namespace VividFrame
             return MouseDown() && rect.Contains(MouseGui());
         }
 
-        private static Vector2 MouseGui()
+        private Vector2 MouseGui()
         {
+            if (_vr)
+                return _vrMouse - _vrClipOffset;
             try
             {
                 Event ev = Event.current;
@@ -2723,8 +3083,10 @@ namespace VividFrame
             }
         }
 
-        private static bool MouseDown()
+        private bool MouseDown()
         {
+            if (_vr)
+                return EvType() == EventType.MouseDown;
             try
             {
                 Event ev = Event.current;
@@ -2738,8 +3100,10 @@ namespace VividFrame
             }
         }
 
-        private static bool MouseHeld()
+        private bool MouseHeld()
         {
+            if (_vr)
+                return _vrHeld;
             try { return Input.GetMouseButton(0); }
             catch { return false; }
         }

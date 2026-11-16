@@ -2,7 +2,7 @@ using System;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(VividFrame.VividFrameMod), "VividFrame", "1.8.3", "VividFrame")]
+[assembly: MelonInfo(typeof(VividFrame.VividFrameMod), "VividFrame", "1.9.0", "mcperr")]
 [assembly: MelonGame("VRChat", "VRChat")]
 
 namespace VividFrame
@@ -83,8 +83,7 @@ namespace VividFrame
             _profiles = new ProfileStore(LoggerInstance);
             _worlds = new WorldProfiles(LoggerInstance);
             _misc = new MiscTweaks(_settings, LoggerInstance);
-            _vrMenu = new VrWorldMenu(_settings, _misc, OnSettingsChanged,
-                () => { if (_menu != null) _menu.ScreenshotRequested = true; }, LoggerInstance);
+            _vrMenu = new VrWorldMenu(_settings, LoggerInstance);
             _volume = new GraphicsVolume(_settings, LoggerInstance, _autoFocus);
             _menu = new Menu(_settings, OnSettingsChanged, LoggerInstance, _autoFocus, _profiles, _worlds, _misc);
             LoggerInstance.Msg("VividFrame {0} ready. Press {1} for the centred glass menu. Profiles: {2}", VividFrameInfo.Version, _settings.MenuKey.Value, _profiles.DirectoryPath);
@@ -175,14 +174,15 @@ namespace VividFrame
             VrSupport.Tick();
             _menu?.Tick();
             _misc?.SetMenuVisible(_menu != null && _menu.Visible);
-            _vrMenu?.Tick(_menu != null && _menu.Visible);
+            _vrMenu?.Tick(_menu);
 
-            if (_menu != null && !_menu.IsCapturingKey && VrSupport.MenuToggleDown)
+            if (_menu != null && VrSupport.MenuToggleDown)
             {
+                // The controller chord is not a keyboard key, so it works even while a key is being bound.
                 VrSupport.ConsumeMenuToggleDown();
                 _menu.Toggle();
             }
-            else if (_menu == null || !_menu.IsCapturingKey)
+            else if (_menu != null && !_menu.IsCapturingKey)
             {
                 if (WasMenuKeyPressed())
                     _menu.Toggle();
@@ -242,7 +242,22 @@ namespace VividFrame
         public override void OnGUI()
         {
             if (VrSupport.Active)
+            {
+                // In VR the same menu is drawn into the world-space panel's texture instead of the mirror.
+                try
+                {
+                    _vrMenu?.RenderGui(_menu);
+                }
+                catch (Exception ex)
+                {
+                    if (!_guiErrorLogged)
+                    {
+                        _guiErrorLogged = true;
+                        LoggerInstance.Error("VividFrame VR drawing failed: {0}", ex);
+                    }
+                }
                 return;
+            }
             if (_menu == null || !(_menu.Visible || _menu.HudActive || _menu.OverlaysActive))
                 return;
 
@@ -317,9 +332,10 @@ namespace VividFrame
 
         private void PollWorld()
         {
-            if (_worlds == null || !_settings.AutoProfiles.Value)
+            if (_worlds == null)
                 return;
-            if (!_worlds.Refresh())
+            // Always refresh so the menu shows the current world, but only load when auto-load is on.
+            if (!_worlds.Refresh() || !_settings.AutoProfiles.Value)
                 return;
             string profile = _worlds.PinnedForCurrent();
             if (string.IsNullOrEmpty(profile))

@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.9.0
+- The VR panel is now the desktop glass menu. The same menu is drawn into a texture on one world-space quad, so every tab, control and setting from the desktop is there in VR, with the same animations.
+- VR pointing: a laser from the right controller, the knob shows where you point, trigger clicks and drags sliders, double trigger resets a slider, the right stick scrolls smoothly, and dragging the title bar moves the panel.
+- The VR panel opens in front of you slightly below eye level, faces you, and (with Keep panel in view) drifts back when you turn or walk away. New VR section in Settings: Panel size and Keep panel in view.
+- VR overlays (FPS, stats, crosshair, toasts) use the desktop pills on a head-locked layer. Cinema bars stay desktop only.
+- Fixed the VR panel and HUD showing as dark quads with tiny dots, also visible on the PC mirror: their TextMesh text had no font, so nothing but the pointer dot and glyph specks rendered.
+- Fixed VR clicks firing twice: controller input was polled every 20 ms, so a trigger press stayed "down" for two frames. Input is now read once per frame with trigger hysteresis.
+- Removed the VR panel's physics colliders and the rebuild of every object on each click or scroll.
+- Fixed sliders and switches with the same label (several "Intensity" sliders) sharing drag and animation state. Control ids now come from the setting id.
+- Fixed per-world profiles not loading when the Settings tab was open while joining a world.
+- Quality override only writes values that changed. Re-setting MSAA and shadow settings every 3 seconds rebuilt render targets.
+- Turning a post effect off no longer leaks its settings object; it is deactivated instead of removed.
+- FOV and zoom crash-log entries are throttled so they no longer push useful entries out of the log.
+- The menu key chip in the title bar now opens Settings instead of doing nothing.
+- Fixed a possible error every frame on the menu key if the menu failed to start.
+- Denser glass, brighter hint text and a 0.45 glass opacity floor keep text readable over bright worlds.
+- Mod author shows as mcperr in the MelonLoader log.
+
 ## 1.8.3
 - Fixed the VR settings panel showing only tiny dots: the panel and HUD were rotated 180 degrees (quads faced away and text was mirrored) and TextMesh text was about 10 times smaller than intended. The panel now faces the headset and the text is about 2 cm tall.
 - The VR HUD sat behind the camera because of the same rotation; it is now in front of you.

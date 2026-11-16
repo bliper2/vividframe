@@ -180,13 +180,13 @@ namespace VividFrame
             if (zoomKey && !_zooming)
             {
                 _zooming = true;
-                CrashLog.Mark("misc: _zooming -> true");
+                CrashLog.MarkEvery("misc-zoom", 2f, "misc: _zooming -> true");
                 _zoomLive = _settings.ZoomFov.Value;
             }
             else if (!zoomKey && _zooming)
             {
                 _zooming = false;
-                CrashLog.Mark("misc: _zooming -> false");
+                CrashLog.MarkEvery("misc-zoom", 2f, "misc: _zooming -> false");
                 if (Mathf.Abs(_settings.ZoomFov.Value - _zoomLive) > 0.01f)
                     _settings.ZoomFov.Value = _zoomLive;   // remember the zoom level you scrolled to
             }
@@ -217,7 +217,7 @@ namespace VividFrame
                     _origFov = cam.fieldOfView;
                     _fovCurrent = _origFov;
                     _fovApplied = true;
-                    CrashLog.Mark("misc: _fovApplied -> true");
+                    CrashLog.MarkEvery("misc-fov", 2f, "misc: _fovApplied -> true");
                 }
                 _fovCurrent = Mathf.Lerp(_fovCurrent, target, blend);
                 cam.fieldOfView = _fovCurrent;
@@ -228,7 +228,7 @@ namespace VividFrame
                 if (cam == null)
                 {
                     _fovApplied = false;
-                    CrashLog.Mark("misc: _fovApplied -> false");
+                    CrashLog.MarkEvery("misc-fov", 2f, "misc: _fovApplied -> false");
                     return;
                 }
                 _fovCurrent = Mathf.Lerp(_fovCurrent, _origFov, blend);
@@ -237,7 +237,7 @@ namespace VividFrame
                 {
                     cam.fieldOfView = _origFov;
                     _fovApplied = false;
-                    CrashLog.Mark("misc: _fovApplied -> false");
+                    CrashLog.MarkEvery("misc-fov", 2f, "misc: _fovApplied -> false");
                 }
             }
         }
@@ -667,24 +667,79 @@ namespace VividFrame
                     _qualityApplied = true;
                     CrashLog.Mark("misc: _qualityApplied -> true");
                 }
-                Guard(5, "vSyncCount", () => QualitySettings.vSyncCount = _settings.VSync.Value ? 1 : 0);
+                // Only write values that differ. Re-setting MSAA, shadow mode or shadow resolution makes Unity
+                // rebuild render targets (eye textures in VR), which hitched every refresh and risks native crashes.
+                Guard(5, "vSyncCount", () =>
+                {
+                    int v = _settings.VSync.Value ? 1 : 0;
+                    if (QualitySettings.vSyncCount != v) QualitySettings.vSyncCount = v;
+                });
                 Guard(5, "targetFrameRate", () =>
                 {
                     int cap = _settings.FpsCap.Value;
-                    Application.targetFrameRate = cap <= 0 ? _origFrameRate : cap;
+                    int v = cap <= 0 ? _origFrameRate : cap;
+                    if (Application.targetFrameRate != v) Application.targetFrameRate = v;
                 });
-                Guard(5, "lodBias", () => QualitySettings.lodBias = Mathf.Clamp(_settings.LodBias.Value, 0.3f, 4f));
-                Guard(5, "shadowDistance", () => QualitySettings.shadowDistance = Mathf.Clamp(_settings.ShadowDistance.Value, 0f, 200f));
-                Guard(5, "anisotropic", () => QualitySettings.anisotropicFiltering = _settings.Anisotropic.Value ? AnisotropicFiltering.ForceEnable : _origAniso);
-                Guard(5, "antiAliasing", () => QualitySettings.antiAliasing = MsaaFromIndex(_settings.MsaaIndex.Value));
-                Guard(5, "texture quality", () => QualitySettings.globalTextureMipmapLimit = Mathf.Clamp(_settings.TextureLimit.Value, 0, 3));
-                Guard(5, "shadows", () => QualitySettings.shadows = ShadowModeFromIndex(_settings.ShadowMode.Value));
-                Guard(5, "shadow resolution", () => QualitySettings.shadowResolution = ShadowResFromIndex(_settings.ShadowRes.Value));
-                Guard(5, "shadow cascades", () => QualitySettings.shadowCascades = CascadesFromIndex(_settings.ShadowCascades.Value));
-                Guard(5, "pixel lights", () => QualitySettings.pixelLightCount = Mathf.Clamp(_settings.PixelLights.Value, 0, 16));
-                Guard(5, "skin weights", () => QualitySettings.skinWeights = SkinFromIndex(_settings.SkinWeights.Value));
-                Guard(5, "soft particles", () => QualitySettings.softParticles = _settings.SoftParticles.Value);
-                Guard(5, "reflection probes", () => QualitySettings.realtimeReflectionProbes = _settings.ReflectionProbes.Value);
+                Guard(5, "lodBias", () =>
+                {
+                    float v = Mathf.Clamp(_settings.LodBias.Value, 0.3f, 4f);
+                    if (Math.Abs(QualitySettings.lodBias - v) > 0.001f) QualitySettings.lodBias = v;
+                });
+                Guard(5, "shadowDistance", () =>
+                {
+                    float v = Mathf.Clamp(_settings.ShadowDistance.Value, 0f, 200f);
+                    if (Math.Abs(QualitySettings.shadowDistance - v) > 0.01f) QualitySettings.shadowDistance = v;
+                });
+                Guard(5, "anisotropic", () =>
+                {
+                    AnisotropicFiltering v = _settings.Anisotropic.Value ? AnisotropicFiltering.ForceEnable : _origAniso;
+                    if (QualitySettings.anisotropicFiltering != v) QualitySettings.anisotropicFiltering = v;
+                });
+                Guard(5, "antiAliasing", () =>
+                {
+                    int v = MsaaFromIndex(_settings.MsaaIndex.Value);
+                    if (QualitySettings.antiAliasing != v) QualitySettings.antiAliasing = v;
+                });
+                Guard(5, "texture quality", () =>
+                {
+                    int v = Mathf.Clamp(_settings.TextureLimit.Value, 0, 3);
+                    if (QualitySettings.globalTextureMipmapLimit != v) QualitySettings.globalTextureMipmapLimit = v;
+                });
+                Guard(5, "shadows", () =>
+                {
+                    ShadowQuality v = ShadowModeFromIndex(_settings.ShadowMode.Value);
+                    if (QualitySettings.shadows != v) QualitySettings.shadows = v;
+                });
+                Guard(5, "shadow resolution", () =>
+                {
+                    ShadowResolution v = ShadowResFromIndex(_settings.ShadowRes.Value);
+                    if (QualitySettings.shadowResolution != v) QualitySettings.shadowResolution = v;
+                });
+                Guard(5, "shadow cascades", () =>
+                {
+                    int v = CascadesFromIndex(_settings.ShadowCascades.Value);
+                    if (QualitySettings.shadowCascades != v) QualitySettings.shadowCascades = v;
+                });
+                Guard(5, "pixel lights", () =>
+                {
+                    int v = Mathf.Clamp(_settings.PixelLights.Value, 0, 16);
+                    if (QualitySettings.pixelLightCount != v) QualitySettings.pixelLightCount = v;
+                });
+                Guard(5, "skin weights", () =>
+                {
+                    SkinWeights v = SkinFromIndex(_settings.SkinWeights.Value);
+                    if (QualitySettings.skinWeights != v) QualitySettings.skinWeights = v;
+                });
+                Guard(5, "soft particles", () =>
+                {
+                    bool v = _settings.SoftParticles.Value;
+                    if (QualitySettings.softParticles != v) QualitySettings.softParticles = v;
+                });
+                Guard(5, "reflection probes", () =>
+                {
+                    bool v = _settings.ReflectionProbes.Value;
+                    if (QualitySettings.realtimeReflectionProbes != v) QualitySettings.realtimeReflectionProbes = v;
+                });
             }
             else if (_qualityApplied)
             {
@@ -808,7 +863,7 @@ namespace VividFrame
                 if (_fovApplied && cam != null)
                     cam.fieldOfView = _origFov;
                 _fovApplied = false;
-                CrashLog.Mark("misc: _fovApplied -> false");
+                CrashLog.MarkEvery("misc-fov", 2f, "misc: _fovApplied -> false");
                 if (_clipCamera != null)
                 {
                     if (_nearApplied) _clipCamera.nearClipPlane = _origNear;

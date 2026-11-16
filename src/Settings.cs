@@ -94,6 +94,8 @@ namespace VividFrame
         public MelonPreferences_Entry<bool> AutoProfiles;
         public MelonPreferences_Entry<string> Favourites;
         public MelonPreferences_Entry<bool> AutoUpdate;
+        public MelonPreferences_Entry<float> VrPanelSize;
+        public MelonPreferences_Entry<bool> VrFollow;
 
         public MelonPreferences_Entry<bool> FpsOverlay;
         public MelonPreferences_Entry<int> FpsCorner;
@@ -203,7 +205,7 @@ namespace VividFrame
             LowCostUi = Entry("LowCostUi", false, "Low-cost UI", "Disables menu shadows and animations to cut IMGUI cost.");
             UiScale = Entry("UiScale", 1f, "UI scale", "Extra menu scale on top of the 1080p screen scale. 1 is the default.");
 
-            GlassOpacity = Entry("GlassOpacity", 1f, "Glass opacity", "How solid the menu glass is, 0.2 to 1.");
+            GlassOpacity = Entry("GlassOpacity", 1f, "Glass opacity", "How solid the menu glass is, 0.45 to 1.");
             AccentIndex = Entry("AccentIndex", 0, "Accent colour", "0 White, 1 Ice, 2 Violet, 3 Rose, 4 Mint.");
             FrostBlur = Entry("FrostBlur", false, "Frosted blur", "Blur a snapshot of the screen behind the menu. Takes the snapshot when the menu opens.");
             CompareKey = Entry("CompareKey", "None", "Compare key", "Hold to temporarily show the world without VividFrame.");
@@ -212,6 +214,8 @@ namespace VividFrame
             AutoProfiles = Entry("AutoProfiles", true, "World profiles", "Load the profile pinned to a world when you join it.");
             Favourites = Entry("Favourites", "", "Favourites", "Comma-separated list of pinned controls.");
             AutoUpdate = Entry("AutoUpdate", true, "Auto update", "Download new VividFrame releases from GitHub and install them when the game closes.");
+            VrPanelSize = Entry("VrPanelSize", 1f, "VR panel size", "Size of the VR panel, 0.7 to 1.4. 1 is about 62 cm wide.");
+            VrFollow = Entry("VrFollow", true, "Keep VR panel in view", "Move the VR panel back in front of you when you turn or walk away from it.");
 
             FpsOverlay = Entry("FpsOverlay", false, "FPS counter", "Show a small FPS and frame time readout.");
             FpsCorner = Entry("FpsCorner", 1, "FPS corner", "0 top left, 1 top right, 2 bottom left, 3 bottom right.");
