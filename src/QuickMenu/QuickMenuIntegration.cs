@@ -30,6 +30,12 @@ namespace VividFrame.QuickMenu
         private readonly MiscTweaks _misc;
         private readonly Action _changedOnce;
 
+        private const float FadeInSeconds = 0.14f;
+        private const float FadeOutSeconds = 0.10f;
+        private const float ApplyInterval = 0.05f;
+
+        private static readonly HashSet<IntPtr> HookedTabs = new HashSet<IntPtr>();
+
         private Menu _menu;
         private QmKit _kit;
         private GameObject _tab;
@@ -37,15 +43,22 @@ namespace VividFrame.QuickMenu
         private QmPage _rootPage;
         private readonly List<QmPage> _pages = new List<QmPage>();
         private QmPage _current;
+        private QmPage _closing;
+        private float _fade;
         private Sprite _icon;
         private bool _built;
         private bool _failed;
         private bool _warned;
         private bool _wasQmVisible;
         private bool _dirty;
+        private float _nextApply;
         private int _attempts;
         private float _nextAttempt;
         private float _qmSeenAt = -1f;
+
+        // Native pages whose Canvas we switched off while our page covers them.
+        private readonly List<GameObject> _hiddenPages = new List<GameObject>();
+        private readonly List<Canvas> _hiddenCanvases = new List<Canvas>();
 
         public QuickMenuIntegration(Settings settings, MelonLogger.Instance log, Action onChanged, ProfileStore profiles, MiscTweaks misc)
         {
@@ -55,6 +68,7 @@ namespace VividFrame.QuickMenu
             _profiles = profiles;
             _misc = misc;
             _changedOnce = MarkDirty;
+            _instance = this;
         }
 
         public bool Built => _built;
@@ -81,9 +95,12 @@ namespace VividFrame.QuickMenu
 
         private void TickInner()
         {
-            if (_dirty)
+            // Apply at most 20 times a second while a slider streams changes, and once more at the end.
+            // Saving is left to the mod, which debounces it after the last change.
+            if (_dirty && Time.unscaledTime >= _nextApply)
             {
                 _dirty = false;
+                _nextApply = Time.unscaledTime + ApplyInterval;
                 _onChanged();
             }
 
@@ -110,13 +127,22 @@ namespace VividFrame.QuickMenu
                 return;
             }
 
+            Animate();
+
             bool qmVisible = _kit.IsVisible();
             if (_wasQmVisible && !qmVisible)
-                Close();
+                CloseNow();
             _wasQmVisible = qmVisible;
 
-            if (_current != null && qmVisible)
-                _current.Refresh();
+            if (_current == null)
+                return;
+            if (!qmVisible || !_current.Active || NativeNavigated())
+            {
+                // The menu closed, something else hid our page, or VRChat changed page: reset cleanly.
+                CloseNow();
+                return;
+            }
+            _current.Refresh();
         }
 
         private void TryBuild()
@@ -128,11 +154,10 @@ namespace VividFrame.QuickMenu
             if (qm == null)
             {
                 _qmSeenAt = -1f;
-                if (++_attempts >= MaxAttempts)
-                {
-                    QmUtil.LogOnce(ref _warned, _log, "Quick Menu not found; the VividFrame Quick Menu tab is off for this session.");
-                    _failed = true;
-                }
+                if (++_attempts == MaxAttempts)
+                    _log.Msg("Quick Menu not found yet; still waiting for it to add the VividFrame tab.");
+                if (_attempts >= MaxAttempts)
+                    _nextAttempt = Time.unscaledTime + RetrySeconds * 5f;
                 return;
             }
             // Let the menu finish building itself before cloning from it.
@@ -155,10 +180,7 @@ namespace VividFrame.QuickMenu
             {
                 Build();
                 _built = true;
-                _log.Msg("Quick Menu tab ready ({0}{1}{2}).",
-                    kit.TabTemplate != null ? "tab" : "dashboard button",
-                    kit.SliderTemplate != null ? ", native sliders" : ", stepper sliders",
-                    kit.ToggleTemplate != null ? ", native toggles" : ", button toggles");
+                _log.Msg("Quick Menu tab ready ({0}).", kit.Describe());
             }
             catch (Exception ex)
             {
@@ -175,14 +197,14 @@ namespace VividFrame.QuickMenu
         private void Build()
         {
             _rootPage = NewPage("VividFrame", Close);
-            QmPage visuals = NewPage("VividFrame: Visuals", OpenRoot);
-            QmPage colour = NewPage("VividFrame: Colour", OpenRoot);
-            QmPage effects = NewPage("VividFrame: Effects", OpenRoot);
-            QmPage camera = NewPage("VividFrame: Camera", OpenRoot);
-            QmPage presets = NewPage("VividFrame: Presets", OpenRoot);
-            QmPage configs = NewPage("VividFrame: Configs", OpenRoot);
-            QmPage settings = NewPage("VividFrame: Settings", OpenRoot);
-            QmPage misc = NewPage("VividFrame: Misc", OpenRoot);
+            QmPage visuals = NewPage("Visuals", OpenRoot);
+            QmPage colour = NewPage("Colour", OpenRoot);
+            QmPage effects = NewPage("Effects", OpenRoot);
+            QmPage camera = NewPage("Camera", OpenRoot);
+            QmPage presets = NewPage("Presets", OpenRoot);
+            QmPage configs = NewPage("Configs", OpenRoot);
+            QmPage settings = NewPage("Settings", OpenRoot);
+            QmPage misc = NewPage("Misc", OpenRoot);
 
             Settings s = _settings;
             Action ch = _changedOnce;
@@ -375,9 +397,8 @@ namespace VividFrame.QuickMenu
         {
             if (_kit.TabTemplate != null)
             {
-                _tab = _kit.Clone(_kit.TabTemplate, _kit.TabBar, "VF_Tab");
+                _tab = _kit.Clone(_kit.TabTemplate, _kit.TabBar, "VF_Tab", go => QmKit.HideBadges(go.transform));
                 _tab.transform.SetAsLastSibling();
-                QmKit.HideBadges(_tab.transform);
                 Transform iconT = QmUtil.FindDeep(_tab.transform, "Icon");
                 Image icon = iconT != null ? iconT.GetComponent<Image>() : null;
                 if (icon != null)
@@ -390,19 +411,19 @@ namespace VividFrame.QuickMenu
                 }
                 Transform labelT = QmUtil.FindDeep(_tab.transform, "Label");
                 QmUtil.SetText(labelT != null ? QmUtil.FirstText(labelT) : QmUtil.FirstText(_tab.transform), "VividFrame");
-                Button b = _tab.GetComponent<Button>();
+                Button b = _kit.EnsureButton(_tab);
                 b.onClick = new Button.ButtonClickedEvent();
                 b.onClick.AddListener((Action)OpenRoot);
 
-                // Picking any native tab leaves our page.
+                // Picking any native tab leaves our page. Hooked once per tab for the whole session.
                 for (int i = 0; i < _kit.TabBar.childCount; i++)
                 {
                     Transform t = _kit.TabBar.GetChild(i);
                     if (t == _tab.transform)
                         continue;
                     Button native = t.GetComponent<Button>();
-                    if (native != null)
-                        native.onClick.AddListener((Action)CloseIfBuilt);
+                    if (native != null && HookedTabs.Add(native.Pointer))
+                        native.onClick.AddListener((Action)OnNativeTab);
                 }
             }
             else
@@ -411,10 +432,13 @@ namespace VividFrame.QuickMenu
             }
         }
 
-        private void CloseIfBuilt()
+        private static QuickMenuIntegration _instance;
+
+        private static void OnNativeTab()
         {
-            if (_built)
-                Close();
+            QuickMenuIntegration self = _instance;
+            if (self != null && self._built)
+                self.CloseNow();
         }
 
         private void OpenRoot()
@@ -422,21 +446,157 @@ namespace VividFrame.QuickMenu
             Open(_rootPage);
         }
 
+        /// <summary>Shows one of our pages, covering the native page on first open.</summary>
         private void Open(QmPage page)
         {
-            if (page == null)
+            if (page == null || page.Root == null)
                 return;
-            if (_current != null && _current != page)
-                _current.Show(false);
+            if (_closing != null)
+            {
+                _closing.Hide();
+                _closing = null;
+            }
+            if (_current == page)
+                return;
+            if (_current == null)
+                HideNativePages();
+            else
+                _current.Hide();
             _current = page;
-            page.Show(true);
+            _fade = 0f;
+            page.SetFade(0f);
+            page.Show(_hiddenPages.Count == 0);
         }
 
+        /// <summary>Fades our page out and gives the native page back.</summary>
         private void Close()
         {
-            if (_current != null)
-                _current.Show(false);
+            if (_current == null)
+                return;
+            RestoreNativePages();
+            _closing = _current;
             _current = null;
+            _fade = 1f;
+        }
+
+        /// <summary>Immediate close, for native navigation and the Quick Menu closing.</summary>
+        private void CloseNow()
+        {
+            if (_closing != null)
+            {
+                _closing.Hide();
+                _closing = null;
+            }
+            if (_current != null)
+            {
+                _current.Hide();
+                _current = null;
+            }
+            RestoreNativePages();
+        }
+
+        /// <summary>
+        /// Switches off the Canvas of each visible native page next to ours, so the window shows our
+        /// page on the Quick Menu's own background. Nothing else on those pages is touched.
+        /// </summary>
+        private void HideNativePages()
+        {
+            _hiddenPages.Clear();
+            _hiddenCanvases.Clear();
+            Transform parent = _rootPage.Root.transform.parent;
+            if (parent == null)
+                return;
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                Transform t = parent.GetChild(i);
+                GameObject go = t.gameObject;
+                if (!go.activeSelf || t.name.StartsWith("VF_", StringComparison.Ordinal))
+                    continue;
+                Canvas c = t.GetComponent<Canvas>();
+                if (c == null || !c.enabled || !IsMenuPage(t))
+                    continue;
+                c.enabled = false;
+                _hiddenPages.Add(go);
+                _hiddenCanvases.Add(c);
+            }
+        }
+
+        /// <summary>True for objects carrying VRChat's page component, so window decoration is never hidden.</summary>
+        private static bool IsMenuPage(Transform t)
+        {
+            var comps = t.GetComponents<Component>();
+            for (int i = 0; i < comps.Length; i++)
+            {
+                Component c = comps[i];
+                if (c == null)
+                    continue;
+                string name;
+                try { name = c.GetIl2CppType().Name; }
+                catch { continue; }
+                if (name == "UIPage" || name.EndsWith("Page", StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
+        }
+
+        private void RestoreNativePages()
+        {
+            for (int i = 0; i < _hiddenCanvases.Count; i++)
+            {
+                Canvas c = _hiddenCanvases[i];
+                try
+                {
+                    if (c != null && !c.enabled)
+                        c.enabled = true;
+                }
+                catch
+                {
+                }
+            }
+            _hiddenPages.Clear();
+            _hiddenCanvases.Clear();
+        }
+
+        /// <summary>
+        /// VRChat (or another mod) moved to a different page while ours was up: a covered page was
+        /// closed or switched its Canvas back on. Step aside instead of fighting over the window.
+        /// </summary>
+        private bool NativeNavigated()
+        {
+            for (int i = 0; i < _hiddenPages.Count; i++)
+            {
+                GameObject go = _hiddenPages[i];
+                Canvas c = _hiddenCanvases[i];
+                if (go == null || c == null || !go.activeSelf || c.enabled)
+                    return true;
+            }
+            return false;
+        }
+
+        private void Animate()
+        {
+            float dt = Time.unscaledDeltaTime;
+            if (_current != null && _fade < 1f)
+            {
+                _fade = Mathf.Min(1f, _fade + dt / FadeInSeconds);
+                _current.SetFade(EaseOut(_fade));
+            }
+            else if (_closing != null)
+            {
+                _fade = Mathf.Max(0f, _fade - dt / FadeOutSeconds);
+                _closing.SetFade(EaseOut(_fade));
+                if (_fade <= 0f)
+                {
+                    _closing.Hide();
+                    _closing = null;
+                }
+            }
+        }
+
+        private static float EaseOut(float t)
+        {
+            float u = 1f - t;
+            return 1f - u * u * u;
         }
 
         private void Notify(string text)
@@ -503,7 +663,7 @@ namespace VividFrame.QuickMenu
 
         private void TearDown()
         {
-            Close();
+            CloseNow();
             for (int i = 0; i < _pages.Count; i++)
             {
                 try { _pages[i].Destroy(); }
@@ -532,6 +692,8 @@ namespace VividFrame.QuickMenu
 
         public void Dispose()
         {
+            if (_instance == this)
+                _instance = null;
             try { TearDown(); }
             catch { }
             if (_icon != null)

@@ -2,7 +2,7 @@ using System;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(VividFrame.VividFrameMod), "VividFrame", "1.10.0", "mcperr")]
+[assembly: MelonInfo(typeof(VividFrame.VividFrameMod), "VividFrame", "1.10.1", "mcperr")]
 [assembly: MelonGame("VRChat", "VRChat")]
 
 namespace VividFrame
@@ -104,6 +104,7 @@ namespace VividFrame
         {
             _sceneName = sceneName;
             CrashLog.Mark("scene loaded: " + sceneName);
+            _volume?.OnSceneLoaded();
             TryReady("scene " + sceneName);
             _nextLayerRefresh = 0f;
             _misc?.OnSceneLoaded();

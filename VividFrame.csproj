@@ -12,7 +12,7 @@
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <AssemblyName>VividFrame</AssemblyName>
     <RootNamespace>VividFrame</RootNamespace>
-    <Version>1.10.0</Version>
+    <Version>1.10.1</Version>
     <Authors>mcperr</Authors>
     <Description>A graphics and quality-of-life mod for VRChat (MelonLoader).</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

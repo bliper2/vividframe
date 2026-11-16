@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.10.1
+- Quick Menu pages now sit on the Quick Menu's own background. The native page underneath is hidden while a VividFrame page is open and comes back when it closes, instead of a dark panel drawn over it.
+- Groups and section headers are cloned from the same native page as the page itself, so spacing and alignment match VRChat's pages. Rows keep their native height and button labels are centred.
+- Pages scroll when their content is taller than the window, with a native scrollbar and clipping.
+- Toggles look like VRChat's settings toggles (on and off icons) instead of buttons with On/Off text. Without a native toggle to copy, they use the Quick Menu's check and cross icons.
+- Sliders: the value text updates live, the handle no longer jumps back while you drag it, and visual settings apply at most 20 times a second during a drag instead of every frame. Preferences still save once after the last change.
+- Pages fade and slide in when opened and fade out when closed. All pages are built once; switching between them does not rebuild anything.
+- Back goes from a section to the VividFrame page, and from there back to the native page. The VividFrame page closes right away when you pick a native tab, VRChat changes page, the Quick Menu closes, or another mod hides it.
+- The VividFrame tab keeps working if the Quick Menu appears late, and native tabs are only hooked once per session.
+- The "No PostProcessLayer found" warning is logged once per scene instead of every 30 seconds, with a note when a layer shows up later.
+
 ## 1.10.0
 - New VividFrame tab in VRChat's Quick Menu, in desktop and VR. It opens a VividFrame page with a master toggle, a Glass menu button and buttons for eight sections: Visuals, Colour, Effects, Camera, Presets, Configs, Settings and Misc.
 - The sections use the Quick Menu's own sliders, toggles and buttons. Every slider and toggle is bound to the same setting as the glass menu and the VR panel, so a change in one shows in the others right away.

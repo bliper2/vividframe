@@ -243,6 +243,46 @@ namespace VividFrame.QuickMenu
             return sprite;
         }
 
+        /// <summary>
+        /// Fallback toggle artwork when the Quick Menu's own check and cross sprites are not found:
+        /// a white check mark or cross on a transparent square. Built once per session.
+        /// </summary>
+        public static Sprite MakeMark(bool check)
+        {
+            const int size = 96;
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.hideFlags = HideFlags.HideAndDontSave;
+            tex.wrapMode = TextureWrapMode.Clamp;
+            var px = new Color[size * size];
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float d;
+                    if (check)
+                        d = Mathf.Min(Segment(x, y, 20f, 50f, 40f, 30f), Segment(x, y, 40f, 30f, 78f, 70f));
+                    else
+                        d = Mathf.Min(Segment(x, y, 24f, 24f, 72f, 72f), Segment(x, y, 24f, 72f, 72f, 24f));
+                    float a = Mathf.Clamp01(7.5f - d);
+                    px[y * size + x] = new Color(1f, 1f, 1f, a);
+                }
+            }
+            tex.SetPixels(px);
+            tex.Apply(false, true);
+            Sprite sprite = Sprite.Create(tex, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f);
+            sprite.hideFlags = HideFlags.HideAndDontSave;
+            return sprite;
+        }
+
+        private static float Segment(float px, float py, float ax, float ay, float bx, float by)
+        {
+            float vx = bx - ax, vy = by - ay;
+            float wx = px - ax, wy = py - ay;
+            float t = Mathf.Clamp01((wx * vx + wy * vy) / (vx * vx + vy * vy));
+            float dx = wx - vx * t, dy = wy - vy * t;
+            return Mathf.Sqrt(dx * dx + dy * dy);
+        }
+
         public static void LogOnce(ref bool flag, MelonLogger.Instance log, string message)
         {
             if (flag)

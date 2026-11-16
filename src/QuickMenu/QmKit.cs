@@ -14,6 +14,7 @@ namespace VividFrame.QuickMenu
     {
         public Transform QmRoot;
         public Transform Window;
+        public Canvas RootCanvas;
         public Transform PageTemplate;
         public Transform ButtonTemplate;
         public Transform GroupTemplate;
@@ -22,8 +23,14 @@ namespace VividFrame.QuickMenu
         public Transform SliderTemplate;
         public Transform TabBar;
         public Transform TabTemplate;
-        public Image BackdropSource;
-        public Canvas RootCanvas;
+
+        /// <summary>Hover and press colours of a native button, for controls that need a new Button.</summary>
+        public ColorBlock ButtonColors;
+        public Selectable.Transition ButtonTransition = Selectable.Transition.ColorTint;
+
+        /// <summary>The Quick Menu's own check and cross artwork, when it can be found.</summary>
+        public Sprite OnSprite;
+        public Sprite OffSprite;
 
         /// <summary>Inactive parent for fresh clones so their scripts stay asleep until stripped.</summary>
         public Transform Staging;
@@ -46,24 +53,43 @@ namespace VividFrame.QuickMenu
             kit.RootCanvas = qm.GetComponent<Canvas>();
 
             kit.PageTemplate = QmUtil.FindAny(root, "Menu_Camera", "Menu_Dashboard");
-            kit.ButtonTemplate = QmUtil.FindAny(root, "Button_Respawn", "Button_NewInstance", "Button_GoHome");
             if (kit.PageTemplate == null) { kit.Missing = "page template (Menu_Camera / Menu_Dashboard)"; return kit; }
-            if (kit.ButtonTemplate == null) { kit.Missing = "button template (Button_Respawn)"; return kit; }
-            if (FindContent(kit.PageTemplate) == null) { kit.Missing = "page content (ScrollRect/Viewport/VerticalLayoutGroup)"; return kit; }
+            Transform content = FindContent(kit.PageTemplate);
+            if (content == null) { kit.Missing = "page content (Scrollrect/Viewport/VerticalLayoutGroup)"; return kit; }
 
-            kit.GroupTemplate = kit.ButtonTemplate.parent;
+            kit.ButtonTemplate = QmUtil.FindAny(root, "Button_Respawn", "Button_NewInstance", "Button_GoHome");
+            if (kit.ButtonTemplate == null) { kit.Missing = "button template (Button_Respawn)"; return kit; }
+            Button nativeButton = kit.ButtonTemplate.GetComponent<Button>();
+            if (nativeButton == null) { kit.Missing = "button component on " + kit.ButtonTemplate.name; return kit; }
+            kit.ButtonColors = nativeButton.colors;
+            kit.ButtonTransition = nativeButton.transition;
+
+            // Groups and headers from the page we clone, so spacing matches that page exactly.
+            for (int i = 0; i < content.childCount; i++)
+            {
+                Transform child = content.GetChild(i);
+                if (kit.GroupTemplate == null && child.GetComponent<GridLayoutGroup>() != null)
+                    kit.GroupTemplate = child;
+                else if (kit.HeaderTemplate == null && child.name.StartsWith("Header", StringComparison.Ordinal) && QmUtil.FirstText(child) != null)
+                    kit.HeaderTemplate = child;
+            }
+            if (kit.GroupTemplate == null)
+                kit.GroupTemplate = kit.ButtonTemplate.parent;
             if (kit.GroupTemplate == null || kit.GroupTemplate.GetComponent<LayoutGroup>() == null)
             {
                 kit.Missing = "button group layout";
                 return kit;
             }
+            if (kit.HeaderTemplate == null)
+            {
+                kit.HeaderTemplate = QmUtil.FindAny(root, "Header_H3", "Header_QuickActions");
+                if (kit.HeaderTemplate != null && QmUtil.FirstText(kit.HeaderTemplate) == null)
+                    kit.HeaderTemplate = null;
+            }
 
-            kit.HeaderTemplate = QmUtil.FindAny(root, "Header_QuickActions", "Header_H3");
-            if (kit.HeaderTemplate != null && QmUtil.FirstText(kit.HeaderTemplate) == null)
-                kit.HeaderTemplate = null;
-
+            // Native settings toggles are buttons with Icon_On / Icon_Off children, not Unity Toggles.
             kit.ToggleTemplate = QmUtil.FindAny(root, "Button_ToggleQMInfo", "Button_ToggleTooltips");
-            if (kit.ToggleTemplate != null && kit.ToggleTemplate.GetComponent<Toggle>() == null)
+            if (kit.ToggleTemplate != null && (QmUtil.FindDeep(kit.ToggleTemplate, "Icon_On") == null || QmUtil.FindDeep(kit.ToggleTemplate, "Icon_Off") == null))
                 kit.ToggleTemplate = null;
 
             kit.SliderTemplate = QmUtil.FindAny(root, "VolumeSlider_Master", "ScreenBrightness");
@@ -81,11 +107,45 @@ namespace VividFrame.QuickMenu
                     kit.TabTemplate = tab;
                 }
             }
-
-            Transform bg = QmUtil.FindAny(kit.Window, "Background_QM", "BackgroundLayer01", "Panel_QM_Background");
-            if (bg != null)
-                kit.BackdropSource = bg.GetComponent<Image>();
             return kit;
+        }
+
+        /// <summary>Looks up the Quick Menu's check and cross sprites once, for recreated toggles.</summary>
+        public void FindToggleSprites()
+        {
+            if (OnSprite != null && OffSprite != null)
+                return;
+            try
+            {
+                var sprites = Resources.FindObjectsOfTypeAll<Sprite>();
+                for (int i = 0; i < sprites.Length && (OnSprite == null || OffSprite == null); i++)
+                {
+                    Sprite s = sprites[i];
+                    if (s == null)
+                        continue;
+                    string n = s.name;
+                    if (OnSprite == null && n == "Checkmark")
+                        OnSprite = s;
+                    else if (OffSprite == null && n == "Decline")
+                        OffSprite = s;
+                }
+            }
+            catch
+            {
+            }
+            if (OnSprite == null)
+                OnSprite = QmUtil.MakeMark(true);
+            if (OffSprite == null)
+                OffSprite = QmUtil.MakeMark(false);
+        }
+
+        public string Describe()
+        {
+            return "page " + PageTemplate.name + ", button " + ButtonTemplate.name + ", group " + GroupTemplate.name
+                   + ", header " + (HeaderTemplate != null ? HeaderTemplate.name : "none")
+                   + ", toggle " + (ToggleTemplate != null ? ToggleTemplate.name : "recreated")
+                   + ", slider " + (SliderTemplate != null ? SliderTemplate.name : "steppers")
+                   + ", tab " + (TabTemplate != null ? TabTemplate.name : "dashboard button");
         }
 
         /// <summary>True while the Quick Menu window is on screen.</summary>
@@ -120,15 +180,19 @@ namespace VividFrame.QuickMenu
             Staging = go.transform;
         }
 
-        /// <summary>Clones <paramref name="template"/> asleep, strips it, then parents it under <paramref name="parent"/>.</summary>
-        public GameObject Clone(Transform template, Transform parent, string name)
+        /// <summary>
+        /// Clones <paramref name="template"/> asleep, strips it, lets <paramref name="prepare"/> adjust it
+        /// while it is still asleep, then parents it under <paramref name="parent"/> and activates it.
+        /// </summary>
+        public GameObject Clone(Transform template, Transform parent, string name, Action<GameObject> prepare = null)
         {
             EnsureStaging();
             GameObject go = UnityEngine.Object.Instantiate(template.gameObject, Staging, false);
             go.name = name;
             QmUtil.Strip(go);
-            go.transform.SetParent(parent, false);
             go.SetActive(true);
+            prepare?.Invoke(go);
+            go.transform.SetParent(parent, false);
             return go;
         }
 
@@ -142,6 +206,42 @@ namespace VividFrame.QuickMenu
                 if (t != null && t != root && (t.name.StartsWith("Badge", StringComparison.Ordinal) || t.name == "Icon_Secondary"))
                     t.gameObject.SetActive(false);
             }
+        }
+
+        /// <summary>A plain Button with native hover and press colours on a clone that has none.</summary>
+        public Button EnsureButton(GameObject go)
+        {
+            Button b = go.GetComponent<Button>();
+            if (b != null)
+                return b;
+            b = go.AddComponent<Button>();
+            Transform bg = QmUtil.FindDeep(go.transform, "Background");
+            Graphic target = bg != null ? bg.GetComponent<Graphic>() : null;
+            if (target == null)
+                target = go.GetComponent<Graphic>() ?? go.GetComponentInChildren<Image>(true);
+            b.targetGraphic = target;
+            b.transition = ButtonTransition;
+            b.colors = ButtonColors;
+            return b;
+        }
+
+        /// <summary>
+        /// Gives a row a fixed height when it has nothing that reports one, so the page's vertical
+        /// layout cannot collapse it.
+        /// </summary>
+        public static void KeepHeight(GameObject go)
+        {
+            if (go.GetComponent<LayoutElement>() != null || go.GetComponent<LayoutGroup>() != null)
+                return;
+            var rt = go.GetComponent<RectTransform>();
+            if (rt == null)
+                return;
+            float h = rt.rect.height;
+            if (h <= 1f)
+                return;
+            var le = go.AddComponent<LayoutElement>();
+            le.minHeight = h;
+            le.preferredHeight = h;
         }
 
         public void DestroyStaging()

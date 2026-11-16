@@ -53,6 +53,13 @@ namespace VividFrame
             }
         }
 
+        /// <summary>Allows the missing-layer notice once more for the new scene.</summary>
+        public void OnSceneLoaded()
+        {
+            _warnedMissingLayer = false;
+            _lastLoggedMissingLayers = 0f;
+        }
+
         public void Teardown()
         {
             RestoreRenderScale();
@@ -398,15 +405,21 @@ namespace VividFrame
                     _log.Warning("VR is active but no stereo PostProcessLayer was found; VividFrame visual effects may be unavailable in the headset.");
             }
 
+            // Once per scene: worlds without a PostProcessLayer on their camera cannot show any
+            // post-processing, VividFrame's included. Colour-free tweaks (FOV, overlays) still work.
             if (found == 0)
             {
-                float now = Time.unscaledTime;
-                if (!_warnedMissingLayer || now - _lastLoggedMissingLayers > 30f)
+                if (!_warnedMissingLayer)
                 {
-                    _log.Warning("No PostProcessLayer found on loaded cameras. VividFrame's volume cannot run until a world or camera has one.");
+                    _log.Warning("This scene's camera has no PostProcessLayer, so VividFrame's visual effects are unavailable here. Other features still work.");
                     _warnedMissingLayer = true;
-                    _lastLoggedMissingLayers = now;
+                    _lastLoggedMissingLayers = Time.unscaledTime;
                 }
+            }
+            else if (_warnedMissingLayer && _lastLoggedMissingLayers >= 0f)
+            {
+                _log.Msg("PostProcessLayer found ({0}); VividFrame's visual effects are active.", found);
+                _lastLoggedMissingLayers = -1f;
             }
             }
             catch (Exception ex)
