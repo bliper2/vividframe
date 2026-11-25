@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10.2
+- Added desktop free camera, toggled with **Shift+B**. Move with WASD, look with the mouse, rise or descend with Space/Ctrl, and hold Shift to move faster. Press Shift+B or Escape to return to the player camera.
+- Free camera is disabled in VR and automatically exits when loading another scene.
+
 ## 1.10.1
 - Quick Menu pages now sit on the Quick Menu's own background. The native page underneath is hidden while a VividFrame page is open and comes back when it closes, instead of a dark panel drawn over it.
 - Groups and section headers are cloned from the same native page as the page itself, so spacing and alignment match VRChat's pages. Rows keep their native height and button labels are centred.

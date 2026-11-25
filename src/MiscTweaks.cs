@@ -53,6 +53,14 @@ namespace VividFrame
         private string _zoomName;
         private KeyCode _zoomCode;
         private bool _zoomValid;
+        private Camera _freeCamera;
+        private Transform _freeCameraParent;
+        private Vector3 _freeCameraLocalPosition;
+        private Quaternion _freeCameraLocalRotation;
+        private CursorLockMode _freeCameraCursorLock;
+        private bool _freeCameraCursorVisible;
+        private float _freeCameraYaw;
+        private float _freeCameraPitch;
 
         private float _ramAt;
         private float _ramMb;
@@ -78,6 +86,7 @@ namespace VividFrame
         /// <summary>Call every frame from OnLateUpdate.</summary>
         public void LateTick()
         {
+            TickFreeCamera();
             TickCamera();
             TickAudio();
             if (Time.unscaledTime >= _nextPass)
@@ -95,6 +104,7 @@ namespace VividFrame
 
         public void OnSceneLoaded()
         {
+            StopFreeCamera();
             // Fog and ambient belong to the world, so drop what we remembered about the last one.
             _fogApplied = false;
             CrashLog.Mark("misc: _fogApplied -> false");
@@ -108,6 +118,113 @@ namespace VividFrame
             CrashLog.Mark("misc: _farApplied -> false");
             _nextCameraLookup = 0f;
             ApplyNow();
+        }
+
+        public bool FreeCameraActive { get { return _freeCamera != null; } }
+
+        public string ToggleFreeCamera()
+        {
+            if (FreeCameraActive)
+            {
+                StopFreeCamera();
+                return "Free camera off";
+            }
+            if (VrSupport.Active)
+                return "Free camera is desktop only";
+
+            Camera camera = GetCamera();
+            if (camera == null)
+                return "Free camera: no active camera";
+
+            try
+            {
+                Transform transform = camera.transform;
+                _freeCamera = camera;
+                _freeCameraParent = transform.parent;
+                _freeCameraLocalPosition = transform.localPosition;
+                _freeCameraLocalRotation = transform.localRotation;
+                _freeCameraCursorLock = Cursor.lockState;
+                _freeCameraCursorVisible = Cursor.visible;
+                Vector3 angles = transform.eulerAngles;
+                _freeCameraYaw = angles.y;
+                _freeCameraPitch = angles.x > 180f ? angles.x - 360f : angles.x;
+                transform.SetParent(null, true);
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
+                return "Free camera on: WASD move, Space/Ctrl up/down, mouse look, Shift speed";
+            }
+            catch (Exception ex)
+            {
+                StopFreeCamera();
+                Once(0, "Could not start free camera", ex);
+                return "Free camera could not start";
+            }
+        }
+
+        private void StopFreeCamera()
+        {
+            Camera camera = _freeCamera;
+            if (camera == null)
+                return;
+
+            try
+            {
+                Transform transform = camera.transform;
+                if (_freeCameraParent != null)
+                {
+                    transform.SetParent(_freeCameraParent, false);
+                    transform.localPosition = _freeCameraLocalPosition;
+                    transform.localRotation = _freeCameraLocalRotation;
+                }
+            }
+            catch { }
+            try
+            {
+                Cursor.lockState = _freeCameraCursorLock;
+                Cursor.visible = _freeCameraCursorVisible;
+            }
+            catch { }
+            _freeCamera = null;
+            _freeCameraParent = null;
+        }
+
+        private void TickFreeCamera()
+        {
+            Camera camera = _freeCamera;
+            if (camera == null)
+                return;
+            try
+            {
+                if (!camera.isActiveAndEnabled || VrSupport.Active)
+                {
+                    StopFreeCamera();
+                    return;
+                }
+
+                float dt = Mathf.Clamp(Time.unscaledDeltaTime, 0f, 0.05f);
+                _freeCameraYaw += Input.GetAxis("Mouse X") * 3f;
+                _freeCameraPitch = Mathf.Clamp(_freeCameraPitch - Input.GetAxis("Mouse Y") * 3f, -89f, 89f);
+                camera.transform.rotation = Quaternion.Euler(_freeCameraPitch, _freeCameraYaw, 0f);
+
+                Vector3 move = Vector3.zero;
+                if (Input.GetKey(KeyCode.W)) move += camera.transform.forward;
+                if (Input.GetKey(KeyCode.S)) move -= camera.transform.forward;
+                if (Input.GetKey(KeyCode.D)) move += camera.transform.right;
+                if (Input.GetKey(KeyCode.A)) move -= camera.transform.right;
+                if (Input.GetKey(KeyCode.Space)) move += Vector3.up;
+                if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)) move -= Vector3.up;
+                float speed = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift) ? 12f : 4f;
+                if (move.sqrMagnitude > 1f) move.Normalize();
+                camera.transform.position += move * (speed * dt);
+
+                if (Input.GetKeyDown(KeyCode.Escape))
+                    StopFreeCamera();
+            }
+            catch (Exception ex)
+            {
+                Once(0, "Free camera update failed", ex);
+                StopFreeCamera();
+            }
         }
 
         private void ApplyPeriodic()

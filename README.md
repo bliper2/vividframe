@@ -16,7 +16,7 @@ Made by **mcperr**. MIT licensed and fully open source.
 
 **Misc tab**
 - **Overlays:** FPS counter, players in the instance, clock, session timer, camera position, memory use, crosshair and cinema bars.
-- **Camera:** FOV override, hold-to-zoom with scroll wheel (default Left Alt), near and far clip, clean screenshots (1x to 4x).
+- **Camera:** free camera (Shift+B; WASD, mouse look, Space/Ctrl, Shift speed), FOV override, hold-to-zoom with scroll wheel (default Left Alt), near and far clip, clean screenshots (1x to 4x).
 - **Quality:** FPS cap, VSync, LOD bias, shadows, texture quality, MSAA, pixel lights, skin weights, soft particles and reflections.
 - **System:** run in background, mute when unfocused, master volume, loading priority, fog and ambient light, free memory, and real hardware info read from Windows.
 

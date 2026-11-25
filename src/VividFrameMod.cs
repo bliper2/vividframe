@@ -2,7 +2,7 @@ using System;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(VividFrame.VividFrameMod), "VividFrame", "1.10.1", "mcperr")]
+[assembly: MelonInfo(typeof(VividFrame.VividFrameMod), "VividFrame", "1.10.2", "mcperr")]
 [assembly: MelonGame("VRChat", "VRChat")]
 
 namespace VividFrame
@@ -28,6 +28,8 @@ namespace VividFrame
         private readonly HotKey _compareKey = new HotKey();
         private readonly HotKey _masterKey = new HotKey();
         private readonly HotKey _profileKey = new HotKey();
+        private readonly HotKey _freeCameraKey = new HotKey();
+        private readonly HotKey _freeCameraShift = new HotKey();
         private int _profileCycle = -1;
         private MiscTweaks _misc;
         private VrWorldMenu _vrMenu;
@@ -298,6 +300,9 @@ namespace VividFrame
 
         private void HandleHotkeys()
         {
+            if (_freeCameraKey.Down("B") && (_freeCameraShift.Held("LeftShift") || _freeCameraShift.Held("RightShift")))
+                _menu.Notify(_misc.ToggleFreeCamera());
+
             bool held = _compareKey.Held(_settings.CompareKey.Value);
             if (held != _settings.CompareHeld)
             {
