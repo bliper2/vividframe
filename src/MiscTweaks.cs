@@ -209,14 +209,18 @@ namespace VividFrame
                 }
 
                 float dt = Mathf.Clamp(Time.unscaledDeltaTime, 0f, 0.05f);
-                _freeCameraYaw += Input.GetAxis("Mouse X") * 3f;
-                _freeCameraPitch = Mathf.Clamp(_freeCameraPitch - Input.GetAxis("Mouse Y") * 3f, -89f, 89f);
+                float sensitivity = Mathf.Clamp(_settings.FreeCameraMouseSensitivity.Value, 0.2f, 8f);
+                _freeCameraYaw += Input.GetAxis("Mouse X") * sensitivity;
+                _freeCameraPitch = Mathf.Clamp(_freeCameraPitch - Input.GetAxis("Mouse Y") * sensitivity, -89f, 89f);
                 Quaternion targetRotation = Quaternion.Euler(_freeCameraPitch, _freeCameraYaw, 0f);
                 camera.transform.rotation = Quaternion.Slerp(camera.transform.rotation, targetRotation, 1f - Mathf.Exp(-dt * 9f));
 
                 float scroll = Input.mouseScrollDelta.y;
+                float minZoomFov = Mathf.Clamp(_settings.FreeCameraMinZoomFov.Value, 5f, 100f);
+                float maxZoomFov = Mathf.Clamp(_settings.FreeCameraMaxZoomFov.Value, minZoomFov + 1f, 140f);
                 if (Mathf.Abs(scroll) > 0.001f)
-                    _freeCameraTargetFov = Mathf.Clamp(_freeCameraTargetFov * Mathf.Pow(0.88f, scroll), 15f, 100f);
+                    _freeCameraTargetFov = Mathf.Clamp(_freeCameraTargetFov * Mathf.Pow(0.88f, scroll), minZoomFov, maxZoomFov);
+                _freeCameraTargetFov = Mathf.Clamp(_freeCameraTargetFov, minZoomFov, maxZoomFov);
                 camera.fieldOfView = Mathf.Lerp(camera.fieldOfView, _freeCameraTargetFov, 1f - Mathf.Exp(-dt * 10f));
 
                 Vector3 move = Vector3.zero;
@@ -226,7 +230,9 @@ namespace VividFrame
                 if (Input.GetKey(KeyCode.A)) move -= camera.transform.right;
                 if (Input.GetKey(KeyCode.Space)) move += Vector3.up;
                 if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)) move -= Vector3.up;
-                float speed = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift) ? 12f : 4f;
+                float speed = Mathf.Clamp(_settings.FreeCameraMoveSpeed.Value, 0.5f, 20f);
+                if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
+                    speed *= 3f;
                 if (move.sqrMagnitude > 1f) move.Normalize();
                 Vector3 desiredVelocity = move * speed;
                 Vector3 velocity = Vector3.SmoothDamp(_freeCameraVelocity, desiredVelocity, ref _freeCameraVelocity, 0.18f, Mathf.Infinity, dt);

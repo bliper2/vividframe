@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10.4
+- Added free camera controls for movement speed, mouse sensitivity, and minimum/maximum zoom FOV to the Camera page in the glass menu, VR panel, and Quick Menu.
+- Defaults preserve the prior camera feel. Shift still triples movement speed, and zoom bounds stay at least one degree apart.
+
 ## 1.10.3
 - Free camera movement eases in and out, and mouse turns use smooth cinematic damping.
 - Scroll wheel adjusts the free camera's field of view with a smooth zoom response.

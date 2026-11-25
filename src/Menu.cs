@@ -1763,6 +1763,13 @@ namespace VividFrame
             Slider(x0, ref y0, cw, "Zoom FOV", _settings.ZoomFov, 5f, 90f, "0");
             Hint(x0, ref y0, cw, "Hold the zoom key (Left Alt by default), then scroll the mouse wheel to zoom in or out. It eases smoothly and remembers your zoom level.");
 
+            Section(x0, ref y0, cw, "FREE CAMERA  ·  SHIFT+B");
+            Slider(x0, ref y0, cw, "Move speed", _settings.FreeCameraMoveSpeed, 0.5f, 20f, "0.0");
+            Slider(x0, ref y0, cw, "Mouse sensitivity", _settings.FreeCameraMouseSensitivity, 0.2f, 8f, "0.0");
+            Slider(x0, ref y0, cw, "Minimum zoom FOV", _settings.FreeCameraMinZoomFov, 5f, 100f, "0");
+            Slider(x0, ref y0, cw, "Maximum zoom FOV", _settings.FreeCameraMaxZoomFov, 20f, 140f, "0");
+            Hint(x0, ref y0, cw, "Shift moves three times faster. The zoom bounds stay at least one degree apart.");
+
             Section(x1, ref y1, cw, "CLIP PLANES");
             Switch(x1, ref y1, cw, "Override near clip", _settings.NearClipOverride);
             if (_settings.NearClipOverride.Value)

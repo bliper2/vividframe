@@ -300,6 +300,11 @@ namespace VividFrame.QuickMenu
             camera.AddToggle("Reset FOV\nin menus", s.FovResetInMenus, ch);
             camera.AddSlider("Field of view", s.Fov, 40f, 130f, "0", ch);
             camera.AddSlider("Zoom FOV", s.ZoomFov, 5f, 90f, "0", ch);
+            camera.Header("Free camera  Shift+B");
+            camera.AddSlider("Move speed", s.FreeCameraMoveSpeed, 0.5f, 20f, "0.0", ch);
+            camera.AddSlider("Mouse sensitivity", s.FreeCameraMouseSensitivity, 0.2f, 8f, "0.0", ch);
+            camera.AddSlider("Minimum zoom FOV", s.FreeCameraMinZoomFov, 5f, 100f, "0", ch);
+            camera.AddSlider("Maximum zoom FOV", s.FreeCameraMaxZoomFov, 20f, 140f, "0", ch);
             camera.Header("Clipping");
             camera.AddToggle("Near clip\noverride", s.NearClipOverride, ch);
             camera.AddToggle("Far clip\noverride", s.FarClipOverride, ch);

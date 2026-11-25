@@ -123,6 +123,8 @@ namespace VividFrame
         public MelonPreferences_Entry<float> CinemaThickness, CinemaOpacity;
         public MelonPreferences_Entry<string> ZoomKey;
         public MelonPreferences_Entry<float> ZoomFov;
+        public MelonPreferences_Entry<float> FreeCameraMoveSpeed, FreeCameraMouseSensitivity;
+        public MelonPreferences_Entry<float> FreeCameraMinZoomFov, FreeCameraMaxZoomFov;
         public MelonPreferences_Entry<bool> NearClipOverride, FarClipOverride;
         public MelonPreferences_Entry<float> NearClip, FarClip;
         public MelonPreferences_Entry<int> ScreenshotScale;
@@ -249,6 +251,10 @@ namespace VividFrame
             CinemaOpacity = Entry("CinemaOpacity", 1f, "Cinema bar opacity", "0 to 1.");
             ZoomKey = Entry("ZoomKey", "None", "Zoom key", "Hold to zoom in.");
             ZoomFov = Entry("ZoomFov", 30f, "Zoom FOV", "Field of view while zooming.");
+            FreeCameraMoveSpeed = Entry("FreeCameraMoveSpeed", 4f, "Free camera move speed", "Base movement speed in metres per second. Shift moves three times faster.");
+            FreeCameraMouseSensitivity = Entry("FreeCameraMouseSensitivity", 3f, "Free camera mouse sensitivity", "Mouse look sensitivity. Higher values turn faster.");
+            FreeCameraMinZoomFov = Entry("FreeCameraMinZoomFov", 15f, "Free camera minimum zoom FOV", "Narrowest field of view the free camera can zoom to.");
+            FreeCameraMaxZoomFov = Entry("FreeCameraMaxZoomFov", 100f, "Free camera maximum zoom FOV", "Widest field of view the free camera can zoom to.");
             var zoomDefaulted = _category.CreateEntry("ZoomKeyDefaulted", false, "Zoom key defaulted", "Internal flag.", is_hidden: true);
             if (!zoomDefaulted.Value)
             {

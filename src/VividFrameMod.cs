@@ -2,7 +2,7 @@ using System;
 using MelonLoader;
 using UnityEngine;
 
-[assembly: MelonInfo(typeof(VividFrame.VividFrameMod), "VividFrame", "1.10.3", "mcperr")]
+[assembly: MelonInfo(typeof(VividFrame.VividFrameMod), "VividFrame", "1.10.4", "mcperr")]
 [assembly: MelonGame("VRChat", "VRChat")]
 
 namespace VividFrame
