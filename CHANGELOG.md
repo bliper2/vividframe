@@ -1,7 +1,11 @@
 # Changelog
 
+## 1.10.3
+- Free camera movement eases in and out, and mouse turns use smooth cinematic damping.
+- Scroll wheel adjusts the free camera's field of view with a smooth zoom response.
+
 ## 1.10.2
-- Added desktop free camera, toggled with **Shift+B**. Move with WASD, look with the mouse, rise or descend with Space/Ctrl, and hold Shift to move faster. Press Shift+B or Escape to return to the player camera.
+- Added desktop free camera, toggled with **Shift+B**. Move with WASD, look with the mouse, zoom with the scroll wheel, rise or descend with Space/Ctrl, and hold Shift to move faster. Press Shift+B or Escape to return to the player camera.
 - Free camera is disabled in VR and automatically exits when loading another scene.
 
 ## 1.10.1

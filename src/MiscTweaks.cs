@@ -61,6 +61,9 @@ namespace VividFrame
         private bool _freeCameraCursorVisible;
         private float _freeCameraYaw;
         private float _freeCameraPitch;
+        private float _freeCameraOriginalFov;
+        private float _freeCameraTargetFov;
+        private Vector3 _freeCameraVelocity;
 
         private float _ramAt;
         private float _ramMb;
@@ -145,13 +148,16 @@ namespace VividFrame
                 _freeCameraLocalRotation = transform.localRotation;
                 _freeCameraCursorLock = Cursor.lockState;
                 _freeCameraCursorVisible = Cursor.visible;
+                _freeCameraOriginalFov = camera.fieldOfView;
+                _freeCameraTargetFov = _freeCameraOriginalFov;
+                _freeCameraVelocity = Vector3.zero;
                 Vector3 angles = transform.eulerAngles;
                 _freeCameraYaw = angles.y;
                 _freeCameraPitch = angles.x > 180f ? angles.x - 360f : angles.x;
                 transform.SetParent(null, true);
                 Cursor.lockState = CursorLockMode.Locked;
                 Cursor.visible = false;
-                return "Free camera on: WASD move, Space/Ctrl up/down, mouse look, Shift speed";
+                return "Free camera on: WASD move, mouse look, scroll to zoom, Space/Ctrl up/down, Shift speed";
             }
             catch (Exception ex)
             {
@@ -170,6 +176,7 @@ namespace VividFrame
             try
             {
                 Transform transform = camera.transform;
+                camera.fieldOfView = _freeCameraOriginalFov;
                 if (_freeCameraParent != null)
                 {
                     transform.SetParent(_freeCameraParent, false);
@@ -204,7 +211,13 @@ namespace VividFrame
                 float dt = Mathf.Clamp(Time.unscaledDeltaTime, 0f, 0.05f);
                 _freeCameraYaw += Input.GetAxis("Mouse X") * 3f;
                 _freeCameraPitch = Mathf.Clamp(_freeCameraPitch - Input.GetAxis("Mouse Y") * 3f, -89f, 89f);
-                camera.transform.rotation = Quaternion.Euler(_freeCameraPitch, _freeCameraYaw, 0f);
+                Quaternion targetRotation = Quaternion.Euler(_freeCameraPitch, _freeCameraYaw, 0f);
+                camera.transform.rotation = Quaternion.Slerp(camera.transform.rotation, targetRotation, 1f - Mathf.Exp(-dt * 9f));
+
+                float scroll = Input.mouseScrollDelta.y;
+                if (Mathf.Abs(scroll) > 0.001f)
+                    _freeCameraTargetFov = Mathf.Clamp(_freeCameraTargetFov * Mathf.Pow(0.88f, scroll), 15f, 100f);
+                camera.fieldOfView = Mathf.Lerp(camera.fieldOfView, _freeCameraTargetFov, 1f - Mathf.Exp(-dt * 10f));
 
                 Vector3 move = Vector3.zero;
                 if (Input.GetKey(KeyCode.W)) move += camera.transform.forward;
@@ -215,7 +228,9 @@ namespace VividFrame
                 if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl)) move -= Vector3.up;
                 float speed = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift) ? 12f : 4f;
                 if (move.sqrMagnitude > 1f) move.Normalize();
-                camera.transform.position += move * (speed * dt);
+                Vector3 desiredVelocity = move * speed;
+                Vector3 velocity = Vector3.SmoothDamp(_freeCameraVelocity, desiredVelocity, ref _freeCameraVelocity, 0.18f, Mathf.Infinity, dt);
+                camera.transform.position += velocity * dt;
 
                 if (Input.GetKeyDown(KeyCode.Escape))
                     StopFreeCamera();
@@ -273,7 +288,8 @@ namespace VividFrame
         {
             try
             {
-                TickFov();
+                if (!FreeCameraActive)
+                    TickFov();
                 TickClip();
             }
             catch (Exception ex)
